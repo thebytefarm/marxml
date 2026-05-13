@@ -1,0 +1,26 @@
+{
+  "name": "marxml",
+  "version": "0.0.0",
+  "description": "Fast markdown + XML query and mutation. Rust core with native Node bindings.",
+  "keywords": ["markdown", "xml", "parser", "ast", "napi", "rust"],
+  "license": "MIT OR Apache-2.0",
+  "author": "Zac Rosenbauer <me@zrosenbauer.com>",
+  "homepage": "https://github.com/thebytefarm/marxml",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thebytefarm/marxml.git"
+  },
+  "bugs": {
+    "url": "https://github.com/thebytefarm/marxml/issues"
+  },
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

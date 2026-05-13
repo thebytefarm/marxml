@@ -1,0 +1,13 @@
+[package]
+name = "marxml-node"
+description = "napi-rs bindings for marxml (internal — not published to crates.io)."
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib"]

@@ -1,0 +1,15 @@
+[package]
+name = "marxml"
+description = "Fast markdown + XML query and mutation. Rust core for the marxml ecosystem."
+readme = "../../README.md"
+keywords = ["markdown", "xml", "parser", "ast"]
+categories = ["parser-implementations", "text-processing"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[lib]
+path = "src/lib.rs"

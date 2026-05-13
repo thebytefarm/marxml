@@ -1,0 +1,25 @@
+# Rust
+target/
+Cargo.lock.bak
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+.pnpm-store/
+
+# napi-rs build artifacts
+*.node
+artifacts/
+npm/*/*.node
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
