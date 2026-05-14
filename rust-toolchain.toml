@@ -1,0 +1,6 @@
+[toolchain]
+# Tracks latest stable. CI also uses stable, so they stay in sync.
+# MSRV (`rust-version` in workspace.package) is what we promise to consumers.
+channel = "stable"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
+profile = "minimal"

@@ -8,7 +8,39 @@ members = [
 [workspace.package]
 version = "0.0.0"
 edition = "2021"
+rust-version = "1.75"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/thebytefarm/marxml"
 homepage = "https://github.com/thebytefarm/marxml"
 authors = ["Zac Rosenbauer <me@zrosenbauer.com>"]
+
+[workspace.dependencies]
+regex = "1.10"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+once_cell = "1.19"
+
+# Dev-dependencies (used by tests/benches in member crates)
+rstest = "0.23"
+insta = { version = "1.41", features = ["yaml"] }
+proptest = "1.5"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Carve-outs from pedantic that are noisy without adding value
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
