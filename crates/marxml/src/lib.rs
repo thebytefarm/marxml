@@ -17,17 +17,21 @@ mod document;
 mod error;
 mod mutate;
 mod parse;
+pub mod schema;
 mod selector;
 mod serialize;
 mod tokenizer;
 mod types;
+mod validate;
 
 pub use document::Markdown;
 pub use error::ParseError;
 pub use parse::{parse, parse_fragment};
+pub use schema::Schema;
 pub use selector::{Selector, SelectorError};
 pub use serialize::SerializeOpts;
 pub use types::{ElementRef, SourcePosition, SourceSpan, TextSegments};
+pub use validate::{validate, ValidationError, ValidationReport};
 
 /// Crate version exposed for downstream diagnostics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
