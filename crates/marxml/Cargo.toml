@@ -16,3 +16,11 @@ path = "src/lib.rs"
 
 [lints]
 workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+proptest = { workspace = true }
+rstest = { workspace = true }

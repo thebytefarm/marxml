@@ -1,0 +1,13 @@
+---
+source: crates/marxml/tests/snapshot_parse.rs
+assertion_line: 73
+expression: dump(&doc)
+---
+<phase id="1" status="todo"> body="\n\n<task id=\"1.1\" status=\"todo\">\n<criterion>do thing one</criterion>\n<criterion>do thing two</criterion>\n</task>\n\n<task id=\"1.2\" status=\"done\">\n<criterion>done already</criterion>\n</task>\n\n" @ 3:11 → 14:235
+  <task id="1.1" status="todo"> body="\n<criterion>do thing one</criterion>\n<criterion>do thing two</criterion>\n" @ 5:41 → 8:150
+    <criterion> body="do thing one" @ 6:71 → 6:106
+    <criterion> body="do thing two" @ 7:107 → 7:142
+  <task id="1.2" status="done"> body="\n<criterion>done already</criterion>\n" @ 10:152 → 12:225
+    <criterion> body="done already" @ 11:182 → 11:217
+<phase id="2" status="todo"> body="\n<task id=\"2.1\"/>\n" @ 16:237 → 18:291
+  <task id="2.1"/> @ 17:266 → 17:282

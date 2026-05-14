@@ -1,0 +1,7 @@
+---
+source: crates/marxml/tests/snapshot_parse.rs
+assertion_line: 80
+expression: dump(&doc)
+---
+<note> body="quick" @ 3:18 → 3:36
+<note> body="second" @ 7:60 → 7:79
