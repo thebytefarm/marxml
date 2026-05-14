@@ -13,6 +13,7 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - Phase 3 selectors: `Selector::parse(s) -> Result<Selector, SelectorError>`, `Markdown::select(&Selector)` and `ElementRef::select(&Selector)`. CSS3 subset — tag, `*`, `[attr]`, `[attr="val"]`, `^=`, `$=`, `*=`, descendant (` `), child (`>`), union (`,`), `:first-child`, `:nth-child(n)`, `:not(simple)`. Tag-less selectors (`[id]`) match any element with the attribute.
 - `ElementRef::text()` yields text segments between child elements; `ElementRef::select()` for sub-tree queries.
 - `SelectorError` variants: `Empty`, `UnexpectedEnd`, `Syntax { reason, at }`.
+- Phase 4 mutation: `Markdown::update(&Selector, &[(name, value)])`, `Markdown::replace_content(&Selector, body)`, `Markdown::replace_in(&Selector, &Regex, replacement)`. All return a new owned `String`; the original document is never modified. Untouched bytes are preserved verbatim. Mutated documents remain parseable.
 
 ## [0.0.0] — 2026-05-13
 
