@@ -80,4 +80,28 @@ impl Markdown {
     pub fn replace_in(&self, sel: &Selector, pattern: &Regex, replacement: &str) -> String {
         mutate::replace_in(self, sel, pattern, replacement)
     }
+
+    /// Serialize the parsed XML elements back to a flat XML string.
+    ///
+    /// Surrounding markdown text is dropped — this is just the structured
+    /// payload. Pass [`SerializeOpts::pretty`] for indented multi-line output.
+    #[must_use]
+    pub fn to_xml(&self, opts: &crate::SerializeOpts) -> String {
+        crate::serialize::to_xml(self, opts)
+    }
+
+    /// Serialize the element tree as a `serde_json::Value`.
+    ///
+    /// Top-level result is an array of root elements. Each element is an
+    /// object with `tag`, `attrs`, `content`, `children`, `selfClosing`, and
+    /// `location` fields.
+    #[must_use]
+    pub fn to_json(&self) -> serde_json::Value {
+        crate::serialize::to_json(self)
+    }
+
+    /// Crate-internal accessor for the parsed root elements.
+    pub(crate) fn roots_internal(&self) -> &[ElementData] {
+        &self.roots
+    }
 }

@@ -14,6 +14,7 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - `ElementRef::text()` yields text segments between child elements; `ElementRef::select()` for sub-tree queries.
 - `SelectorError` variants: `Empty`, `UnexpectedEnd`, `Syntax { reason, at }`.
 - Phase 4 mutation: `Markdown::update(&Selector, &[(name, value)])`, `Markdown::replace_content(&Selector, body)`, `Markdown::replace_in(&Selector, &Regex, replacement)`. All return a new owned `String`; the original document is never modified. Untouched bytes are preserved verbatim. Mutated documents remain parseable.
+- Phase 5 serialization: `Markdown::to_xml(&SerializeOpts)`, `Markdown::to_json() -> serde_json::Value`. `SerializeOpts` configures `indent` (per-level prefix) and `self_close_empty`. `SerializeOpts::pretty()` for indented multi-line output. `Display` impl on `Markdown` returns the original raw; `Display` on `ElementRef` returns the element's outer XML, byte-for-byte from the source.
 
 ## [0.0.0] — 2026-05-13
 

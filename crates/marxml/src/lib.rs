@@ -18,6 +18,7 @@ mod error;
 mod mutate;
 mod parse;
 mod selector;
+mod serialize;
 mod tokenizer;
 mod types;
 
@@ -25,6 +26,7 @@ pub use document::Markdown;
 pub use error::ParseError;
 pub use parse::{parse, parse_fragment};
 pub use selector::{Selector, SelectorError};
+pub use serialize::SerializeOpts;
 pub use types::{ElementRef, SourcePosition, SourceSpan, TextSegments};
 
 /// Crate version exposed for downstream diagnostics.
