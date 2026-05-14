@@ -1,5 +1,8 @@
 //! The [`Markdown`] document — the result of [`crate::parse`].
 
+use regex::Regex;
+
+use crate::mutate;
 use crate::selector::{self, Selector};
 use crate::types::{ElementData, ElementRef};
 
@@ -51,5 +54,30 @@ impl Markdown {
     /// ```
     pub fn select(&self, sel: &Selector) -> impl Iterator<Item = ElementRef<'_>> {
         selector::select(&self.roots, &self.raw, sel).into_iter()
+    }
+
+    /// Update or insert attributes on every element matching `sel`. Returns
+    /// the new raw document. The original [`Markdown`] is unchanged.
+    ///
+    /// If an attribute name in `new_attrs` is already present on a matched
+    /// element, its value is replaced. Otherwise the attribute is appended
+    /// at the end of the element's attribute list.
+    #[must_use]
+    pub fn update(&self, sel: &Selector, new_attrs: &[(&str, &str)]) -> String {
+        mutate::update(self, sel, new_attrs)
+    }
+
+    /// Replace the inner content of every element matching `sel` with
+    /// `new_body`. Returns the new raw document.
+    #[must_use]
+    pub fn replace_content(&self, sel: &Selector, new_body: &str) -> String {
+        mutate::replace_content(self, sel, new_body)
+    }
+
+    /// Run a regex `replace_all` over the inner content of every element
+    /// matching `sel`. Returns the new raw document.
+    #[must_use]
+    pub fn replace_in(&self, sel: &Selector, pattern: &Regex, replacement: &str) -> String {
+        mutate::replace_in(self, sel, pattern, replacement)
     }
 }

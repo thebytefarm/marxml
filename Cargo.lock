@@ -314,6 +314,7 @@ version = "0.0.0"
 dependencies = [
  "insta",
  "proptest",
+ "regex",
  "rstest",
  "thiserror",
 ]

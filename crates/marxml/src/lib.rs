@@ -15,6 +15,7 @@
 
 mod document;
 mod error;
+mod mutate;
 mod parse;
 mod selector;
 mod tokenizer;
