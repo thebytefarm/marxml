@@ -1,5 +1,6 @@
 //! The [`Markdown`] document — the result of [`crate::parse`].
 
+use crate::selector::{self, Selector};
 use crate::types::{ElementData, ElementRef};
 
 /// A parsed markdown + embedded XML document.
@@ -34,5 +35,21 @@ impl Markdown {
     #[must_use]
     pub fn root_count(&self) -> usize {
         self.roots.len()
+    }
+
+    /// Query the document with a compiled selector.
+    ///
+    /// Returns every matching element in source order. Each element appears
+    /// at most once even when multiple compounds in a union would match it.
+    ///
+    /// ```
+    /// let doc = marxml::parse(r#"<task id="1"/><task id="2"/>"#)?;
+    /// let sel = marxml::Selector::parse("task")?;
+    /// let tasks: Vec<_> = doc.select(&sel).collect();
+    /// assert_eq!(tasks.len(), 2);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn select(&self, sel: &Selector) -> impl Iterator<Item = ElementRef<'_>> {
+        selector::select(&self.roots, &self.raw, sel).into_iter()
     }
 }
