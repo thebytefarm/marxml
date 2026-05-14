@@ -6,7 +6,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ### Added
 
-- Phase 1 foundation: workspace dependencies, CI workflow, contributor docs, task runner. No user-facing API yet — the working implementation lands in `0.1.0`.
+- Phase 1 foundation: workspace dependencies, CI workflow, contributor docs, task runner.
+- Phase 2 parser: `marxml::parse(&str) -> Result<Markdown, ParseError>` and `parse_fragment`. Hand-written state-machine tokenizer + stack-based tree assembler. Supports nested elements (including same-tag nesting, an improvement over the TS implementation), self-closing tags, hyphenated and underscored names, unicode in content and attribute values. Detects unclosed tags, mismatched/stray closes, malformed attributes, and duplicate sibling `id` attributes within the same tag.
+- `Markdown::root_elements()` foundation for the selector API (Phase 3).
+- `ElementRef` with `tag()`, `attr()`, `attrs()`, `content()`, `children()`, `location()`, `is_self_closing()`.
 
 ## [0.0.0] — 2026-05-13
 
