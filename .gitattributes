@@ -1,0 +1,14 @@
+# Force LF line endings everywhere
+* text=auto eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.node binary
+
+# Generated artifacts
+Cargo.lock linguist-generated=true
+pnpm-lock.yaml linguist-generated=true
+package-lock.json linguist-generated=true
