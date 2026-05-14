@@ -16,13 +16,15 @@
 mod document;
 mod error;
 mod parse;
+mod selector;
 mod tokenizer;
 mod types;
 
 pub use document::Markdown;
 pub use error::ParseError;
 pub use parse::{parse, parse_fragment};
-pub use types::{ElementRef, SourcePosition, SourceSpan};
+pub use selector::{Selector, SelectorError};
+pub use types::{ElementRef, SourcePosition, SourceSpan, TextSegments};
 
 /// Crate version exposed for downstream diagnostics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

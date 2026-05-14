@@ -113,4 +113,68 @@ impl<'a> ElementRef<'a> {
     pub fn is_self_closing(&self) -> bool {
         self.data.self_closing
     }
+
+    /// Query this element's subtree with a compiled selector.
+    ///
+    /// Returns matches within the element's descendants, in source order.
+    pub fn select(&self, sel: &crate::Selector) -> impl Iterator<Item = ElementRef<'a>> + 'a {
+        crate::selector::select(&self.data.children, self.raw, sel).into_iter()
+    }
+
+    /// Inner text segments, in source order, with child element markup stripped.
+    ///
+    /// For `<task>do <em>thing</em> now</task>`, this yields `"do "`,
+    /// `" now"` (the text between child element open tags, plus the
+    /// suffix after the last child).
+    ///
+    /// Returns an empty iterator for self-closing tags.
+    pub fn text(&self) -> impl Iterator<Item = &'a str> + 'a {
+        TextSegments::new(self.raw, self.data)
+    }
+}
+
+/// Iterator over `ElementRef::text()` — the segments of raw text inside an
+/// element, with child element markup omitted.
+pub struct TextSegments<'a> {
+    raw: &'a str,
+    cursor: usize,
+    end: usize,
+    children: core::slice::Iter<'a, ElementData>,
+}
+
+impl<'a> TextSegments<'a> {
+    fn new(raw: &'a str, data: &'a ElementData) -> Self {
+        Self {
+            raw,
+            cursor: data.content_range.start,
+            end: data.content_range.end,
+            children: data.children.iter(),
+        }
+    }
+}
+
+impl<'a> Iterator for TextSegments<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(child) = self.children.next() {
+                let next_start = usize::try_from(child.span.start.offset).unwrap_or(usize::MAX);
+                let segment = &self.raw[self.cursor..next_start];
+                self.cursor = usize::try_from(child.span.end.offset).unwrap_or(usize::MAX);
+                if !segment.is_empty() {
+                    return Some(segment);
+                }
+                continue;
+            }
+            // No more children. Yield remaining tail text, if any. By
+            // construction, `cursor < end` here means the slice is non-empty.
+            if self.cursor < self.end {
+                let segment = &self.raw[self.cursor..self.end];
+                self.cursor = self.end;
+                return Some(segment);
+            }
+            return None;
+        }
+    }
 }
