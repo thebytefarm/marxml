@@ -13,6 +13,8 @@ dist/
 *.node
 artifacts/
 npm/*/*.node
+bindings/node/index.js
+bindings/node/index.d.ts
 
 # OS / editor
 .DS_Store

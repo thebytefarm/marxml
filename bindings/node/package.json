@@ -15,12 +15,29 @@
   },
   "main": "index.js",
   "types": "index.d.ts",
-  "files": [
-    "index.js",
-    "index.d.ts",
-    "README.md"
-  ],
+  "files": ["index.js", "index.d.ts", "README.md"],
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "build": "napi build --platform --release --js-package-name marxml",
+    "build:debug": "napi build --platform --js-package-name marxml",
+    "test": "vitest run"
+  },
+  "napi": {
+    "binaryName": "marxml",
+    "packageName": "marxml",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.6.2",
+    "vitest": "^2.1.0"
   }
 }

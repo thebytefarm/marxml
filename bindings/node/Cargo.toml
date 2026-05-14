@@ -11,3 +11,24 @@ authors.workspace = true
 [lib]
 path = "src/lib.rs"
 crate-type = ["cdylib"]
+
+[dependencies]
+marxml = { path = "../../crates/marxml" }
+napi = { version = "3", default-features = false, features = ["napi9"] }
+napi-derive = "3"
+regex = { workspace = true }
+serde_json = { workspace = true }
+
+[build-dependencies]
+napi-build = "2"
+
+# napi-derive expands to unsafe FFI glue, so we can't `forbid` unsafe here.
+# Doc warnings are dropped — types in this crate are bridge shapes for JS,
+# not part of the Rust public surface.
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
