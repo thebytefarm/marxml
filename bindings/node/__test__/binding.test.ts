@@ -143,16 +143,21 @@ describe('toJson', () => {
 
 describe('validateSchema', () => {
   it('passes a compliant doc', () => {
-    const report = validateSchema('<task id="1" status="todo"><status>todo</status></task>', {
-      task: {
-        attrs: {
-          id: { kind: 'string', required: true },
-          status: { kind: 'enum', values: ['todo', 'done'] },
+    // `contentRequired` checks direct text content — child-only bodies
+    // don't satisfy it.
+    const report = validateSchema(
+      '<task id="1" status="todo">write tests<status>todo</status></task>',
+      {
+        task: {
+          attrs: {
+            id: { kind: 'string', required: true },
+            status: { kind: 'enum', values: ['todo', 'done'] },
+          },
+          childrenRequired: ['status'],
+          contentRequired: true,
         },
-        childrenRequired: ['status'],
-        contentRequired: true,
       },
-    })
+    )
     expect(report.valid).toBe(true)
     expect(report.errors).toHaveLength(0)
   })
