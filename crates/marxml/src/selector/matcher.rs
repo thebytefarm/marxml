@@ -16,6 +16,14 @@ use std::collections::HashSet;
 use super::ast::{Combinator, CompiledSelector, Compound, Predicate, Simple};
 use crate::types::{ElementData, ElementRef};
 
+/// Narrow a sibling-list index back to `u32` for storage in `NodeCtx`.
+/// Parsed documents are bounded to `u32::MAX` bytes, so the number of
+/// children at any one level cannot exceed `u32::MAX` either.
+#[inline]
+fn sibling_index(i: usize) -> u32 {
+    u32::try_from(i).expect("sibling index within MAX_INPUT_BYTES bound")
+}
+
 #[derive(Clone, Copy)]
 struct NodeCtx<'a> {
     data: &'a ElementData,
@@ -39,7 +47,7 @@ pub(crate) fn collect_matches<'a>(
     for (i, root) in roots.iter().enumerate() {
         walk(
             root,
-            u32::try_from(i).unwrap_or(u32::MAX),
+            sibling_index(i),
             sel,
             &mut ancestors,
             raw,
@@ -83,7 +91,7 @@ fn walk<'a>(
     for (i, child) in node.children.iter().enumerate() {
         walk(
             child,
-            u32::try_from(i).unwrap_or(u32::MAX),
+            sibling_index(i),
             sel,
             ancestors,
             raw,

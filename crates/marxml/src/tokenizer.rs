@@ -29,6 +29,14 @@ use crate::types::{SourcePosition, SourceSpan};
 /// thousands (quadratic dominates). The crossover is well-covered at 16.
 const ATTR_DUP_SET_THRESHOLD: usize = 16;
 
+/// Narrow a byte offset into the (bounded) input back to `u32` for storage in
+/// a `SourcePosition`. `parse::parse` validates `input.len() <= u32::MAX`
+/// before calling into the tokenizer, so every offset we see here fits.
+#[inline]
+fn offset_u32(n: usize) -> u32 {
+    u32::try_from(n).expect("offset within MAX_INPUT_BYTES — checked at parse entry")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Token {
     Open {
@@ -74,20 +82,20 @@ pub(crate) fn tokenize(input: &str) -> Result<TokenStream, ParseError> {
 
     while i < bytes.len() {
         if bytes[i] == b'<' {
-            if let Some((new_i, new_line, kind)) = skip_comment_or_cdata(bytes, i, line)? {
-                match kind {
-                    TriviaKind::Comment => trivia.push(i..new_i),
-                    TriviaKind::Cdata => {
-                        // For `<![CDATA[CONTENT]]>` we surface only the open
-                        // and close brackets as trivia; CONTENT falls through
-                        // as ordinary text so consumers see the user-authored
-                        // bytes.
-                        let open_end = i + 9; // `<![CDATA[`
-                        let close_start = new_i - 3; // `]]>`
-                        trivia.push(i..open_end);
-                        trivia.push(close_start..new_i);
-                    }
-                }
+            if let Some((new_i, new_line)) = try_skip_comment(bytes, i, line)? {
+                trivia.push(i..new_i);
+                i = new_i;
+                line = new_line;
+                continue;
+            }
+            if let Some((new_i, new_line)) = try_skip_cdata(bytes, i, line)? {
+                // For `<![CDATA[CONTENT]]>` only the brackets become trivia;
+                // CONTENT falls through as ordinary text so consumers see the
+                // user-authored bytes.
+                let open_end = i + 9; // `<![CDATA[`
+                let close_start = new_i - 3; // `]]>`
+                trivia.push(i..open_end);
+                trivia.push(close_start..new_i);
                 i = new_i;
                 line = new_line;
                 continue;
@@ -124,9 +132,9 @@ fn looks_like_tag_start(bytes: &[u8], i: usize) -> bool {
 
 /// Parse one tag starting at `start` (which must point at `<`).
 ///
-/// Returns the parsed `Token`, the byte index just past the tag, and the
-/// updated line counter.
-#[allow(clippy::too_many_lines)]
+/// Dispatches to [`parse_end_tag`] for `</...>` and [`parse_opening_tag`] for
+/// `<...>` / `<.../>`. Returns the parsed `Token`, the byte index just past
+/// the tag, and the updated line counter.
 fn parse_tag(
     input: &str,
     start: usize,
@@ -135,143 +143,228 @@ fn parse_tag(
     let bytes = input.as_bytes();
     let span_start = SourcePosition {
         line: start_line,
-        offset: u32::try_from(start).unwrap_or(u32::MAX),
+        offset: offset_u32(start),
     };
+    if bytes.get(start + 1) == Some(&b'/') {
+        parse_end_tag(input, start, start_line, span_start)
+    } else {
+        parse_opening_tag(input, start, start_line, span_start)
+    }
+}
 
+/// Parse `</name>` and produce a [`Token::Close`].
+///
+/// `start` points at `<`; `looks_like_tag_start` guarantees the bytes that
+/// follow are `/` + name-start, so the name scan always advances at least
+/// one byte.
+fn parse_end_tag(
+    input: &str,
+    start: usize,
+    start_line: u32,
+    span_start: SourcePosition,
+) -> Result<(Token, usize, u32), ParseError> {
+    let bytes = input.as_bytes();
+    let mut i = start + 2; // step past `</`
+    let mut line = start_line;
+    let name = read_tag_name(input, &mut i);
+    skip_ws(bytes, &mut i, &mut line);
+    if i >= bytes.len() || bytes[i] != b'>' {
+        return Err(ParseError::MalformedTag {
+            reason: format!("expected '>' to close </{name}>"),
+            line: start_line,
+        });
+    }
+    i += 1;
+    let span_end = SourcePosition {
+        line,
+        offset: offset_u32(i),
+    };
+    Ok((
+        Token::Close {
+            name,
+            span: SourceSpan {
+                start: span_start,
+                end: span_end,
+            },
+            body_end: start,
+        },
+        i,
+        line,
+    ))
+}
+
+/// Distinguishes the two forms an opening tag can take. Returned by
+/// [`parse_attribute_list`] so the caller can build the right `Token`.
+enum TagForm {
+    /// `<name …>` — matching `</name>` follows somewhere later.
+    Pair,
+    /// `<name … />` — opens and closes in one tag.
+    SelfClosing,
+}
+
+/// Result of parsing a tag's attribute list. The cursor (`end`, `line`) is
+/// positioned just past the terminator (`>` or `/>`) so the caller can build
+/// the appropriate `Token` without re-scanning.
+struct AttributeList {
+    attrs: Vec<(String, String)>,
+    form: TagForm,
+    end: usize,
+    line: u32,
+}
+
+/// Parse `<name …>` or `<name … />` and produce the matching `Token`.
+fn parse_opening_tag(
+    input: &str,
+    start: usize,
+    start_line: u32,
+    span_start: SourcePosition,
+) -> Result<(Token, usize, u32), ParseError> {
     let mut i = start + 1; // step past `<`
     let mut line = start_line;
-
-    let is_close = bytes[i] == b'/';
-    if is_close {
-        i += 1;
-    }
-
-    // Tag name. `looks_like_tag_start` is the precondition; it guarantees the
-    // next byte after `<` (or `</`) is a name-start byte, so the first
-    // iteration of this loop always consumes at least one byte.
-    let name_start = i;
-    while i < bytes.len() && is_name_char(bytes[i]) {
-        i += 1;
-    }
-    let name = input[name_start..i].to_string();
-
-    if is_close {
-        skip_ws(bytes, &mut i, &mut line);
-        if i >= bytes.len() || bytes[i] != b'>' {
-            return Err(ParseError::MalformedTag {
-                reason: format!("expected '>' to close </{name}>"),
-                line: start_line,
-            });
-        }
-        i += 1;
-        let span_end = SourcePosition {
+    let name = read_tag_name(input, &mut i);
+    let list = parse_attribute_list(input, &name, start_line, i, line)?;
+    i = list.end;
+    line = list.line;
+    let span = SourceSpan {
+        start: span_start,
+        end: SourcePosition {
             line,
-            offset: u32::try_from(i).unwrap_or(u32::MAX),
-        };
-        return Ok((
-            Token::Close {
-                name,
-                span: SourceSpan {
-                    start: span_start,
-                    end: span_end,
-                },
-                body_end: start,
-            },
-            i,
-            line,
-        ));
-    }
+            offset: offset_u32(i),
+        },
+    };
+    let token = match list.form {
+        TagForm::Pair => Token::Open {
+            name,
+            attrs: list.attrs,
+            span,
+            body_start: i,
+        },
+        TagForm::SelfClosing => Token::SelfClose {
+            name,
+            attrs: list.attrs,
+            span,
+        },
+    };
+    Ok((token, i, line))
+}
 
-    // Attributes. Duplicates are rejected so downstream consumers (selectors,
-    // serialization, mutation) all agree on which value belongs to a name.
-    // Detection starts as a linear scan (fast on tags with few attrs) and
-    // promotes to a `HashSet` once attribute count crosses the threshold so
-    // pathological tags stay linear in attribute count.
+/// Scan a tag name. Advances `*i` past the trailing name-char run and returns
+/// the borrowed slice as an owned `String`. The caller is responsible for
+/// having positioned `*i` at the first name-start byte (the `looks_like_tag_start`
+/// precondition enforces this for the tokenizer's dispatch sites).
+fn read_tag_name(input: &str, i: &mut usize) -> String {
+    let bytes = input.as_bytes();
+    let name_start = *i;
+    while *i < bytes.len() && is_name_char(bytes[*i]) {
+        *i += 1;
+    }
+    input[name_start..*i].to_string()
+}
+
+/// Parse the attribute list of an opening tag, returning the collected
+/// attributes plus the [`TagForm`] of the terminator that ended the list
+/// (`>` → `Pair`, `/>` → `SelfClosing`).
+///
+/// Duplicates are rejected so downstream consumers (selectors, serialization,
+/// mutation) all agree on which value belongs to a name. Detection starts as
+/// a linear scan (fast on tags with few attrs) and promotes to a `HashSet`
+/// once the count crosses [`ATTR_DUP_SET_THRESHOLD`] so pathological tags
+/// stay linear in attribute count.
+fn parse_attribute_list(
+    input: &str,
+    tag_name: &str,
+    tag_start_line: u32,
+    start: usize,
+    start_line: u32,
+) -> Result<AttributeList, ParseError> {
+    let bytes = input.as_bytes();
+    let mut i = start;
+    let mut line = start_line;
     let mut attrs: Vec<(String, String)> = Vec::new();
     let mut seen_set: Option<HashSet<String>> = None;
     loop {
         skip_ws(bytes, &mut i, &mut line);
         if i >= bytes.len() {
             return Err(ParseError::MalformedTag {
-                reason: format!("<{name}> not terminated"),
-                line: start_line,
+                reason: format!("<{tag_name}> not terminated"),
+                line: tag_start_line,
             });
         }
         match bytes[i] {
             b'>' => {
-                i += 1;
-                let span_end = SourcePosition {
+                return Ok(AttributeList {
+                    attrs,
+                    form: TagForm::Pair,
+                    end: i + 1,
                     line,
-                    offset: u32::try_from(i).unwrap_or(u32::MAX),
-                };
-                return Ok((
-                    Token::Open {
-                        name,
-                        attrs,
-                        span: SourceSpan {
-                            start: span_start,
-                            end: span_end,
-                        },
-                        body_start: i,
-                    },
-                    i,
-                    line,
-                ));
+                });
             }
             b'/' => {
                 i += 1;
                 if i >= bytes.len() || bytes[i] != b'>' {
                     return Err(ParseError::MalformedTag {
-                        reason: format!("expected '>' after '/' in <{name}/>"),
-                        line: start_line,
+                        reason: format!("expected '>' after '/' in <{tag_name}/>"),
+                        line: tag_start_line,
                     });
                 }
-                i += 1;
-                let span_end = SourcePosition {
+                return Ok(AttributeList {
+                    attrs,
+                    form: TagForm::SelfClosing,
+                    end: i + 1,
                     line,
-                    offset: u32::try_from(i).unwrap_or(u32::MAX),
-                };
-                return Ok((
-                    Token::SelfClose {
-                        name,
-                        attrs,
-                        span: SourceSpan {
-                            start: span_start,
-                            end: span_end,
-                        },
-                    },
-                    i,
-                    line,
-                ));
+                });
             }
             _ => {
-                let (key, value, new_i, new_line) = parse_attribute(input, &name, i, line)?;
-                let is_dup = if let Some(set) = seen_set.as_mut() {
-                    !set.insert(key.clone())
-                } else {
-                    attrs.iter().any(|(k, _)| k == &key)
-                };
-                if is_dup {
+                let (key, value, new_i, new_line) = parse_attribute(input, tag_name, i, line)?;
+                if seen_attribute(&attrs, seen_set.as_ref(), &key) {
                     return Err(ParseError::DuplicateAttr {
-                        tag: name,
+                        tag: tag_name.to_string(),
                         attr: key,
                         line,
                     });
                 }
-                if seen_set.is_none() && attrs.len() + 1 >= ATTR_DUP_SET_THRESHOLD {
-                    let mut set: HashSet<String> = HashSet::with_capacity(attrs.len() + 1);
-                    for (k, _) in &attrs {
-                        set.insert(k.clone());
-                    }
-                    set.insert(key.clone());
-                    seen_set = Some(set);
-                }
+                record_seen_attr(&attrs, &key, &mut seen_set);
                 attrs.push((key, value));
                 i = new_i;
                 line = new_line;
             }
         }
     }
+}
+
+/// `true` when `key` already appears in `attrs`. Uses the promoted hash set
+/// when one exists; falls back to a linear scan over `attrs` for the common
+/// "few attributes" case.
+fn seen_attribute(attrs: &[(String, String)], seen: Option<&HashSet<String>>, key: &str) -> bool {
+    if let Some(set) = seen {
+        set.contains(key)
+    } else {
+        attrs.iter().any(|(k, _)| k == key)
+    }
+}
+
+/// Record `next_key` as a seen attribute. If a hash set already exists, insert
+/// into it; if `attrs` is about to cross [`ATTR_DUP_SET_THRESHOLD`], lazily
+/// build the set first so subsequent insertions stay O(1). Otherwise do
+/// nothing — the linear-scan path in [`seen_attribute`] handles small inputs.
+fn record_seen_attr(
+    attrs: &[(String, String)],
+    next_key: &str,
+    seen: &mut Option<HashSet<String>>,
+) {
+    if let Some(set) = seen.as_mut() {
+        set.insert(next_key.to_string());
+        return;
+    }
+    if attrs.len() + 1 < ATTR_DUP_SET_THRESHOLD {
+        return;
+    }
+    let mut set: HashSet<String> = HashSet::with_capacity(attrs.len() + 1);
+    for (k, _) in attrs {
+        set.insert(k.clone());
+    }
+    set.insert(next_key.to_string());
+    *seen = Some(set);
 }
 
 fn parse_attribute(
@@ -346,57 +439,67 @@ fn parse_attribute(
     Ok((key, value, i, line))
 }
 
-/// Distinguishes the two kinds of trivia the tokenizer recognizes. Comments
-/// disappear entirely; CDATA keeps its inner content as text (only the
-/// markers become trivia).
-enum TriviaKind {
-    Comment,
-    Cdata,
-}
-
-/// If `bytes[i..]` starts with `<!--` or `<![CDATA[`, advance past the
-/// matching `-->` / `]]>` and return the new index, line counter, and the
-/// trivia kind. Returns `Ok(None)` when no such construct is present at `i`.
-fn skip_comment_or_cdata(
+/// If `bytes[start..]` opens with `<!--`, advance past the matching `-->`
+/// and return the new index plus the updated line counter. Returns `Ok(None)`
+/// when there is no comment at `start`.
+fn try_skip_comment(
     bytes: &[u8],
     start: usize,
     start_line: u32,
-) -> Result<Option<(usize, u32, TriviaKind)>, ParseError> {
-    if bytes[start..].starts_with(b"<!--") {
-        let mut i = start + 4;
-        let mut line = start_line;
-        while i + 2 < bytes.len() {
-            if &bytes[i..i + 3] == b"-->" {
-                return Ok(Some((i + 3, line, TriviaKind::Comment)));
-            }
-            if bytes[i] == b'\n' {
-                line = line.saturating_add(1);
-            }
-            i += 1;
-        }
-        return Err(ParseError::MalformedTag {
+) -> Result<Option<(usize, u32)>, ParseError> {
+    if !bytes[start..].starts_with(b"<!--") {
+        return Ok(None);
+    }
+    scan_to_terminator(bytes, start + 4, start_line, b"-->")
+        .ok_or_else(|| ParseError::MalformedTag {
             reason: "unterminated <!-- comment".to_string(),
             line: start_line,
-        });
+        })
+        .map(Some)
+}
+
+/// If `bytes[start..]` opens with `<![CDATA[`, advance past the matching
+/// `]]>` and return the new index plus the updated line counter. Returns
+/// `Ok(None)` when there is no CDATA section at `start`.
+fn try_skip_cdata(
+    bytes: &[u8],
+    start: usize,
+    start_line: u32,
+) -> Result<Option<(usize, u32)>, ParseError> {
+    if !bytes[start..].starts_with(b"<![CDATA[") {
+        return Ok(None);
     }
-    if bytes[start..].starts_with(b"<![CDATA[") {
-        let mut i = start + 9;
-        let mut line = start_line;
-        while i + 2 < bytes.len() {
-            if &bytes[i..i + 3] == b"]]>" {
-                return Ok(Some((i + 3, line, TriviaKind::Cdata)));
-            }
-            if bytes[i] == b'\n' {
-                line = line.saturating_add(1);
-            }
-            i += 1;
-        }
-        return Err(ParseError::MalformedTag {
+    scan_to_terminator(bytes, start + 9, start_line, b"]]>")
+        .ok_or_else(|| ParseError::MalformedTag {
             reason: "unterminated <![CDATA[ section".to_string(),
             line: start_line,
-        });
+        })
+        .map(Some)
+}
+
+/// Scan `bytes[from..]` for the byte sequence `terminator`. On a match,
+/// return the byte index just past the terminator plus the line counter
+/// reflecting any `\n` bytes consumed. Returns `None` when the terminator is
+/// never found before end-of-input.
+fn scan_to_terminator(
+    bytes: &[u8],
+    from: usize,
+    start_line: u32,
+    terminator: &[u8],
+) -> Option<(usize, u32)> {
+    let term_len = terminator.len();
+    let mut i = from;
+    let mut line = start_line;
+    while i + term_len <= bytes.len() {
+        if &bytes[i..i + term_len] == terminator {
+            return Some((i + term_len, line));
+        }
+        if bytes[i] == b'\n' {
+            line = line.saturating_add(1);
+        }
+        i += 1;
     }
-    Ok(None)
+    None
 }
 
 /// Read the next Unicode character starting at byte offset `i`, if any.
