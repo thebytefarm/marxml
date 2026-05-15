@@ -26,6 +26,7 @@ rstest = "0.23"
 insta = { version = "1.41", features = ["yaml"] }
 proptest = "1.5"
 criterion = { version = "0.5", features = ["html_reports"] }
+codspeed-criterion-compat = "2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

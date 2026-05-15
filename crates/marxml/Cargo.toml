@@ -24,6 +24,11 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+codspeed-criterion-compat = { workspace = true }
 insta = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+
+[[bench]]
+name = "parse_bench"
+harness = false

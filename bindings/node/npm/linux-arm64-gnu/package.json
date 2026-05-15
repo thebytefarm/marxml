@@ -1,0 +1,39 @@
+{
+  "name": "marxml-linux-arm64-gnu",
+  "version": "0.0.0",
+  "cpu": [
+    "arm64"
+  ],
+  "main": "marxml.linux-arm64-gnu.node",
+  "files": [
+    "marxml.linux-arm64-gnu.node"
+  ],
+  "description": "Fast markdown + XML query and mutation. Rust core with native Node bindings.",
+  "keywords": [
+    "markdown",
+    "xml",
+    "parser",
+    "ast",
+    "napi",
+    "rust"
+  ],
+  "author": "Zac Rosenbauer <me@zrosenbauer.com>",
+  "homepage": "https://github.com/thebytefarm/marxml",
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thebytefarm/marxml.git"
+  },
+  "bugs": {
+    "url": "https://github.com/thebytefarm/marxml/issues"
+  },
+  "os": [
+    "linux"
+  ],
+  "libc": [
+    "glibc"
+  ]
+}
