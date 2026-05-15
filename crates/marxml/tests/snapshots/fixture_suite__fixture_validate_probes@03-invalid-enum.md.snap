@@ -4,5 +4,5 @@ expression: out
 input_file: crates/marxml/tests/fixtures/validate/03-invalid-enum.md
 ---
 valid: false
-  - line 1: <phase> attribute status has invalid value "bogus" (expected one of ["todo", "done"])
-  - line 2: <task> attribute status has invalid value "haha" (expected one of ["todo", "done", "skip"])
+  - line 1: <phase> attribute status has invalid value "bogus" (expected one of ["done", "todo"])
+  - line 2: <task> attribute status has invalid value "haha" (expected one of ["done", "skip", "todo"])

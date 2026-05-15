@@ -222,8 +222,8 @@ fn whitespace_only_selector_is_an_error() {
 #[case("a:not", "'(' after :not")]
 #[case("a:not(b", "')' after :not argument")]
 #[case("a:", "expected pseudo-class name")]
-#[case("a,", "expected tag name, '*', or predicate")]
-#[case("a b ,", "expected tag name, '*', or predicate")]
+#[case("a,", "unexpected end")]
+#[case("a b ,", "unexpected end")]
 #[case("a b @ c", "expected tag name, '*', or predicate")]
 #[case("a[x@", "expected attribute operator or ']'")]
 fn malformed_selector_errors(#[case] sel: &str, #[case] fragment: &str) {
@@ -267,10 +267,25 @@ fn tag_less_attribute_selector_matches_any_element() {
 }
 
 #[test]
-fn nth_child_zero_matches_nothing() {
-    let doc = parse("<root><a/><b/></root>").unwrap();
-    // Per CSS, :nth-child(0) matches nothing — our 1-indexed check enforces it.
-    assert_eq!(tags(&doc, "root > *:nth-child(0)"), Vec::<String>::new());
+fn selector_value_decodes_entity_references() {
+    // The attribute on the doc parses as the literal value `a&b`. The
+    // selector value also decodes entities, so `[id="a&amp;b"]` finds it.
+    let doc = parse(r#"<x id="a&amp;b"/>"#).unwrap();
+    let sel = Selector::parse(r#"x[id="a&amp;b"]"#).unwrap();
+    assert_eq!(doc.select(&sel).count(), 1);
+}
+
+#[test]
+fn nth_child_zero_is_a_parse_error() {
+    // `:nth-child(0)` could never match a 1-indexed sibling position, so the
+    // parser rejects it at compile time rather than silently producing an
+    // unmatchable selector.
+    let err = Selector::parse("root > *:nth-child(0)").unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("nth-child") && msg.contains("1 or greater"),
+        "expected nth-child(0) rejection, got {msg:?}"
+    );
 }
 
 #[test]

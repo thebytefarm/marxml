@@ -15,6 +15,7 @@
 
 mod document;
 mod error;
+mod escape;
 mod mutate;
 mod parse;
 pub mod schema;
@@ -26,8 +27,10 @@ mod validate;
 
 pub use document::Markdown;
 pub use error::ParseError;
+pub use escape::{escape_attr, escape_text, is_valid_name};
+pub use mutate::{MutateError, MutationReport};
 pub use parse::{parse, parse_fragment};
-pub use schema::Schema;
+pub use schema::{Schema, SchemaError};
 pub use selector::{Selector, SelectorError};
 pub use serialize::SerializeOpts;
 pub use types::{ElementRef, SourcePosition, SourceSpan, TextSegments};

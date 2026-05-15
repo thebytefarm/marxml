@@ -51,7 +51,8 @@ impl Selector {
 pub(crate) fn select<'a>(
     roots: &'a [ElementData],
     raw: &'a str,
+    trivia: &'a [core::ops::Range<usize>],
     sel: &Selector,
 ) -> Vec<ElementRef<'a>> {
-    matcher::collect_matches(roots, raw, &sel.compiled)
+    matcher::collect_matches(roots, raw, trivia, &sel.compiled)
 }

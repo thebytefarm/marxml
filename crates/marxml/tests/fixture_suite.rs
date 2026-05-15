@@ -202,6 +202,9 @@ fn error_kind(e: &ParseError) -> &'static str {
         ParseError::MalformedTag { .. } => "MalformedTag",
         ParseError::MalformedAttribute { .. } => "MalformedAttribute",
         ParseError::DuplicateId { .. } => "DuplicateId",
+        ParseError::MaxDepthExceeded { .. } => "MaxDepthExceeded",
+        ParseError::DuplicateAttr { .. } => "DuplicateAttr",
+        ParseError::InputTooLarge { .. } => "InputTooLarge",
     }
 }
 

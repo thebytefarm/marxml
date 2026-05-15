@@ -18,6 +18,7 @@
 
 use super::ast::{Combinator, CompiledSelector, Compound, Predicate, Simple};
 use super::error::SelectorError;
+use crate::escape::decode_entities;
 
 pub(super) fn parse(input: &str) -> Result<CompiledSelector, SelectorError> {
     if input.trim().is_empty() {
@@ -31,15 +32,47 @@ pub(super) fn parse(input: &str) -> Result<CompiledSelector, SelectorError> {
     while !p.at_end() {
         p.advance(1); // consume the `,`
         p.skip_ws();
+        if p.at_end() {
+            // `"a,"` — selector trails off after the comma.
+            return Err(SelectorError::UnexpectedEnd);
+        }
         compounds.push(p.parse_compound()?);
+        if compounds.len() > MAX_UNION_LEN {
+            return Err(SelectorError::Syntax {
+                reason: format!("selector union exceeds maximum size of {MAX_UNION_LEN}"),
+                at: p.pos,
+            });
+        }
     }
     Ok(CompiledSelector { compounds })
 }
+
+/// Maximum nesting depth for selector `:not(...)` recursion. A higher cap
+/// would let attacker-controlled selector strings stack-overflow the host.
+const MAX_NOT_DEPTH: u32 = 64;
+
+/// Maximum number of simple selectors in a single compound chain
+/// (`a b c d ...`). Without this, an attacker-controlled selector of N
+/// space-separated simples would cost `O(N * MAX_DEPTH)` per element when
+/// matched — a single short string can pin a thread.
+const MAX_COMPOUND_LEN: usize = 64;
+
+/// Maximum number of comma-separated compounds in a selector union (`a, b,
+/// c, ...`). Caller-controlled unions could otherwise force `select` to
+/// evaluate an arbitrarily long list against every element.
+const MAX_UNION_LEN: usize = 64;
+
+/// Maximum number of predicates (`[…]` / `:…`) on a single simple selector.
+/// Bounds the per-node predicate evaluation cost when selectors come from
+/// untrusted input.
+const MAX_PREDICATES_PER_SIMPLE: usize = 32;
 
 struct Parser<'a> {
     bytes: &'a [u8],
     src: &'a str,
     pos: usize,
+    /// Current `:not(` nesting depth — bumped on entry, decremented on exit.
+    not_depth: u32,
 }
 
 impl<'a> Parser<'a> {
@@ -48,6 +81,7 @@ impl<'a> Parser<'a> {
             bytes: src.as_bytes(),
             src,
             pos: 0,
+            not_depth: 0,
         }
     }
 
@@ -77,6 +111,12 @@ impl<'a> Parser<'a> {
             };
             simples.push(self.parse_simple()?);
             links.push(combinator);
+            if simples.len() > MAX_COMPOUND_LEN {
+                return Err(SelectorError::Syntax {
+                    reason: format!("compound chain exceeds maximum length of {MAX_COMPOUND_LEN}"),
+                    at: self.pos,
+                });
+            }
         }
         let subject = simples.pop().expect("at least one simple");
         let mut prefix: Vec<(Combinator, Simple)> = Vec::with_capacity(simples.len());
@@ -106,6 +146,14 @@ impl<'a> Parser<'a> {
                 Some(b'[') => predicates.push(self.parse_attribute_predicate()?),
                 Some(b':') => predicates.push(self.parse_pseudo()?),
                 _ => break,
+            }
+            if predicates.len() > MAX_PREDICATES_PER_SIMPLE {
+                return Err(SelectorError::Syntax {
+                    reason: format!(
+                        "simple selector carries more than {MAX_PREDICATES_PER_SIMPLE} predicates"
+                    ),
+                    at: self.pos,
+                });
             }
         }
         if !had_marker && predicates.is_empty() {
@@ -162,12 +210,25 @@ impl<'a> Parser<'a> {
             "nth-child" => {
                 self.expect(b'(', "'(' after :nth-child")?;
                 let n = self.read_unsigned_int()?;
+                if n == 0 {
+                    return Err(self.syntax_error(
+                        ":nth-child argument must be 1 or greater (siblings are 1-indexed)",
+                    ));
+                }
                 self.expect(b')', "')' after nth-child argument")?;
                 Ok(Predicate::NthChild(n))
             }
             "not" => {
                 self.expect(b'(', "'(' after :not")?;
+                if self.not_depth >= MAX_NOT_DEPTH {
+                    return Err(SelectorError::Syntax {
+                        reason: format!(":not nesting exceeds maximum of {MAX_NOT_DEPTH}"),
+                        at: self.pos,
+                    });
+                }
+                self.not_depth += 1;
                 let inner = self.parse_simple()?;
+                self.not_depth -= 1;
                 self.expect(b')', "')' after :not argument")?;
                 Ok(Predicate::Not(Box::new(inner)))
             }
@@ -204,7 +265,11 @@ impl<'a> Parser<'a> {
         if self.at_end() {
             return Err(SelectorError::UnexpectedEnd);
         }
-        let value = self.src[start..self.pos].to_string();
+        // Decode XML entity references so a selector value `a&amp;b` matches
+        // an attribute parsed from `id="a&amp;b"` (the tokenizer stores that
+        // as the literal `a&b`). Without this the selector grammar would be
+        // strictly less expressive than the attribute-value grammar.
+        let value = decode_entities(&self.src[start..self.pos]).into_owned();
         self.pos += 1; // closing '"'
         Ok(value)
     }
@@ -266,10 +331,4 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn is_name_start(b: u8) -> bool {
-    b.is_ascii_alphabetic() || b == b'_'
-}
-
-fn is_name_char(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.'
-}
+use crate::escape::{is_name_char, is_name_start};

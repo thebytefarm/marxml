@@ -1,10 +1,12 @@
 //! Validate a parsed [`Markdown`] against a [`Schema`].
 
-use regex::Regex;
+use std::collections::{BTreeSet, HashMap};
+use std::fmt::Write as _;
+
 use thiserror::Error;
 
-use crate::schema::{AttrKind, Schema, TagSchema};
-use crate::types::ElementData;
+use crate::schema::{CompiledAttrKind, CompiledTagSchema, Schema};
+use crate::types::{ElementData, TextSegments};
 use crate::Markdown;
 
 /// One problem found during validation. Every variant carries a 1-based
@@ -57,8 +59,8 @@ pub enum ValidationError {
         /// 1-based source line of the child.
         line: u32,
     },
-    /// The element's inner content was empty but the schema marked it
-    /// `content_required`.
+    /// The element's inner text content was empty but the schema marked it
+    /// `content_required`. Child-element markup does not satisfy this rule.
     #[error("line {line}: <{tag}> requires non-empty content")]
     EmptyContent {
         /// Tag with the empty body.
@@ -71,7 +73,6 @@ pub enum ValidationError {
 /// Outcome of [`validate`].
 #[derive(Debug, Clone)]
 pub struct ValidationReport {
-    valid: bool,
     errors: Vec<ValidationError>,
 }
 
@@ -79,7 +80,7 @@ impl ValidationReport {
     /// `true` when the document conforms to the schema.
     #[must_use]
     pub fn is_valid(&self) -> bool {
-        self.valid
+        self.errors.is_empty()
     }
 
     /// All errors found, in source order.
@@ -89,6 +90,12 @@ impl ValidationReport {
     }
 }
 
+/// Threshold past which `check_element` builds a `HashMap` over the
+/// element's attributes for O(1) lookup. Below this, a linear scan over
+/// `node.attrs` is faster (no hash setup cost). The same value mirrors the
+/// tokenizer's duplicate-attr threshold.
+const ATTR_MAP_THRESHOLD: usize = 16;
+
 /// Validate every element in `doc` whose tag is named in `schema`.
 ///
 /// Tags not present in the schema are not inspected. Validation continues
@@ -97,32 +104,57 @@ impl ValidationReport {
 pub fn validate(doc: &Markdown, schema: &Schema) -> ValidationReport {
     let mut errors = Vec::new();
     for root in doc.roots_internal() {
-        walk(root, doc.raw(), schema, &mut errors);
+        walk(root, doc.raw(), doc.trivia(), schema, &mut errors);
     }
-    ValidationReport {
-        valid: errors.is_empty(),
-        errors,
-    }
+    ValidationReport { errors }
 }
 
-fn walk(node: &ElementData, raw: &str, schema: &Schema, errors: &mut Vec<ValidationError>) {
+fn walk(
+    node: &ElementData,
+    raw: &str,
+    trivia: &[core::ops::Range<usize>],
+    schema: &Schema,
+    errors: &mut Vec<ValidationError>,
+) {
     if let Some(ts) = schema.tags.get(&node.tag) {
-        check_element(node, raw, ts, errors);
+        check_element(node, raw, trivia, ts, errors);
     }
     for child in &node.children {
-        walk(child, raw, schema, errors);
+        walk(child, raw, trivia, schema, errors);
     }
 }
 
-fn check_element(node: &ElementData, raw: &str, ts: &TagSchema, errors: &mut Vec<ValidationError>) {
+fn check_element(
+    node: &ElementData,
+    raw: &str,
+    trivia: &[core::ops::Range<usize>],
+    ts: &CompiledTagSchema,
+    errors: &mut Vec<ValidationError>,
+) {
     let line = node.span.start.line;
-    // Attribute checks.
+    // Attribute checks. For typical elements (<16 attrs each side) a linear
+    // scan is faster than building a hashmap; past the threshold we
+    // promote so machine-generated schemas/elements stay near-linear.
+    let attr_map: Option<HashMap<&str, &str>> =
+        if node.attrs.len() >= ATTR_MAP_THRESHOLD || ts.attrs.len() >= ATTR_MAP_THRESHOLD {
+            Some(
+                node.attrs
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect(),
+            )
+        } else {
+            None
+        };
     for (attr_name, constraint) in &ts.attrs {
-        let value = node
-            .attrs
-            .iter()
-            .find(|(k, _)| k == attr_name)
-            .map(|(_, v)| v.as_str());
+        let value = if let Some(map) = &attr_map {
+            map.get(attr_name.as_str()).copied()
+        } else {
+            node.attrs
+                .iter()
+                .find(|(k, _)| k == attr_name)
+                .map(|(_, v)| v.as_str())
+        };
         match value {
             None => {
                 if constraint.required {
@@ -147,9 +179,12 @@ fn check_element(node: &ElementData, raw: &str, ts: &TagSchema, errors: &mut Vec
         }
     }
 
-    // Children checks.
+    // Children checks. Build a tag set over `node.children` once so both the
+    // required-name lookup and the exclusive-allow walk are O(c + r + |allow|)
+    // total rather than O(c * (r + |allow|)).
+    let child_tags: BTreeSet<&str> = node.children.iter().map(|c| c.tag.as_str()).collect();
     for required in &ts.children_required {
-        if !node.children.iter().any(|c| &c.tag == required) {
+        if !child_tags.contains(required.as_str()) {
             errors.push(ValidationError::MissingChild {
                 tag: node.tag.clone(),
                 child: required.clone(),
@@ -159,9 +194,7 @@ fn check_element(node: &ElementData, raw: &str, ts: &TagSchema, errors: &mut Vec
     }
     if ts.children_exclusive {
         for child in &node.children {
-            let allowed = ts.children_required.iter().any(|n| n == &child.tag)
-                || ts.children_optional.iter().any(|n| n == &child.tag);
-            if !allowed {
+            if !ts.children_allowed.contains(&child.tag) {
                 errors.push(ValidationError::UnexpectedChild {
                     tag: node.tag.clone(),
                     child: child.tag.clone(),
@@ -171,10 +204,12 @@ fn check_element(node: &ElementData, raw: &str, ts: &TagSchema, errors: &mut Vec
         }
     }
 
-    // Content check.
+    // Content check: text-only. Child-element markup and comment/CDATA
+    // trivia do not count toward satisfying `content_required`.
     if ts.content_required {
-        let content = &raw[node.content_range.clone()];
-        if content.trim().is_empty() && node.children.is_empty() {
+        let has_text =
+            TextSegments::new_with_trivia(raw, node, trivia).any(|s| !s.trim().is_empty());
+        if !has_text {
             errors.push(ValidationError::EmptyContent {
                 tag: node.tag.clone(),
                 line,
@@ -183,30 +218,31 @@ fn check_element(node: &ElementData, raw: &str, ts: &TagSchema, errors: &mut Vec
     }
 }
 
-fn check_kind(kind: &AttrKind, value: &str) -> Option<String> {
+fn check_kind(kind: &CompiledAttrKind, value: &str) -> Option<String> {
     match kind {
-        AttrKind::String => None,
-        AttrKind::Enum(allowed) => {
-            if allowed.iter().any(|v| v == value) {
+        CompiledAttrKind::String => None,
+        CompiledAttrKind::Enum(allowed) => {
+            if allowed.contains(value) {
                 None
             } else {
-                Some(format!(
-                    "expected one of [{}]",
-                    allowed
-                        .iter()
-                        .map(|s| format!("{s:?}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))
+                let mut msg = String::from("expected one of [");
+                let mut first = true;
+                for v in allowed {
+                    if !first {
+                        msg.push_str(", ");
+                    }
+                    first = false;
+                    let _ = write!(msg, "{v:?}");
+                }
+                msg.push(']');
+                Some(msg)
             }
         }
-        AttrKind::Regex(pat) => {
-            // Schema::build pre-compiles to surface bad patterns early.
-            let re = Regex::new(pat).expect("schema built with invalid regex");
+        CompiledAttrKind::Regex(re) => {
             if re.is_match(value) {
                 None
             } else {
-                Some(format!("did not match regex /{pat}/"))
+                Some(format!("did not match regex /{}/", re.as_str()))
             }
         }
     }

@@ -30,7 +30,6 @@ input_file: crates/marxml/tests/fixtures/serialize/02-nested.md
           {
             "attrs": {},
             "children": [],
-            "content": "todo",
             "location": {
               "end": {
                 "line": 2,
@@ -42,10 +41,10 @@ input_file: crates/marxml/tests/fixtures/serialize/02-nested.md
               }
             },
             "selfClosing": false,
-            "tag": "status"
+            "tag": "status",
+            "text": "todo"
           }
         ],
-        "content": "<status>todo</status>",
         "location": {
           "end": {
             "line": 2,
@@ -57,10 +56,10 @@ input_file: crates/marxml/tests/fixtures/serialize/02-nested.md
           }
         },
         "selfClosing": false,
-        "tag": "task"
+        "tag": "task",
+        "text": ""
       }
     ],
-    "content": "\n  <task id=\"1.1\"><status>todo</status></task>\n",
     "location": {
       "end": {
         "line": 3,
@@ -72,6 +71,7 @@ input_file: crates/marxml/tests/fixtures/serialize/02-nested.md
       }
     },
     "selfClosing": false,
-    "tag": "phase"
+    "tag": "phase",
+    "text": "\n  \n"
   }
 ]

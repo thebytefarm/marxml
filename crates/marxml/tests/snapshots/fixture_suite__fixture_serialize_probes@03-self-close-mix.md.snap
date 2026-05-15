@@ -16,7 +16,6 @@ input_file: crates/marxml/tests/fixtures/serialize/03-self-close-mix.md
   {
     "attrs": {},
     "children": [],
-    "content": "",
     "location": {
       "end": {
         "line": 1,
@@ -28,14 +27,14 @@ input_file: crates/marxml/tests/fixtures/serialize/03-self-close-mix.md
       }
     },
     "selfClosing": true,
-    "tag": "a"
+    "tag": "a",
+    "text": ""
   },
   {
     "attrs": {
       "id": "1"
     },
     "children": [],
-    "content": "",
     "location": {
       "end": {
         "line": 2,
@@ -47,14 +46,14 @@ input_file: crates/marxml/tests/fixtures/serialize/03-self-close-mix.md
       }
     },
     "selfClosing": false,
-    "tag": "b"
+    "tag": "b",
+    "text": ""
   },
   {
     "attrs": {
       "id": "2"
     },
     "children": [],
-    "content": "",
     "location": {
       "end": {
         "line": 3,
@@ -66,6 +65,7 @@ input_file: crates/marxml/tests/fixtures/serialize/03-self-close-mix.md
       }
     },
     "selfClosing": true,
-    "tag": "c"
+    "tag": "c",
+    "text": ""
   }
 ]

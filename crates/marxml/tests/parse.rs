@@ -234,8 +234,94 @@ fn duplicate_id_across_different_tags_is_allowed() {
 }
 
 #[test]
-fn duplicate_id_through_nesting_still_errors() {
-    let err = parse(r#"<task id="1"><task id="1"/></task>"#).unwrap_err();
+fn duplicate_id_through_nesting_is_allowed() {
+    // The parent and the nested task share the same id, but they are not
+    // siblings — they live in different parents — so duplicate-id is fine.
+    let doc = parse(r#"<task id="1"><task id="1"/></task>"#).expect("nested non-siblings ok");
+    assert_eq!(doc.root_count(), 1);
+}
+
+#[test]
+fn duplicate_id_in_different_parents_is_allowed() {
+    let doc = parse(r#"<a><task id="x"/></a><b><task id="x"/></b>"#)
+        .expect("siblings of different parents do not collide");
+    assert_eq!(doc.root_count(), 2);
+}
+
+#[test]
+fn comments_are_skipped_not_parsed_as_elements() {
+    let doc = parse("<root><!-- <evil id=\"1\"/> --></root>")
+        .expect("commented-out elements are not real elements");
+    assert_eq!(doc.root_count(), 1);
+    let root = doc.root_elements().next().unwrap();
+    assert_eq!(root.tag(), "root");
+    assert_eq!(root.children().count(), 0);
+}
+
+#[test]
+fn cdata_content_is_not_parsed_as_elements() {
+    let doc =
+        parse("<root><![CDATA[<inner/>]]></root>").expect("CDATA contents are not real elements");
+    let root = doc.root_elements().next().unwrap();
+    assert_eq!(root.children().count(), 0);
+    // The CDATA markers are stripped; the inner content survives as literal
+    // text — distinct from `<!-- -->` which drops everything.
+    let text: String = root.text().collect();
+    assert_eq!(text, "<inner/>");
+}
+
+#[test]
+fn unterminated_comment_errors() {
+    let err = parse("<a><!-- never closed").unwrap_err();
+    assert!(matches!(err, ParseError::MalformedTag { .. }));
+}
+
+#[test]
+fn entity_references_decoded_in_attributes() {
+    let doc = parse(r#"<task title="A &amp; B &lt; C"/>"#).unwrap();
+    let el = doc.root_elements().next().unwrap();
+    assert_eq!(el.attr("title"), Some("A & B < C"));
+}
+
+#[test]
+fn element_text_excludes_comments_and_includes_cdata_content() {
+    // Comment bytes drop entirely. CDATA preserves its inner content as
+    // literal text (the `<x/>` inside CDATA is not parsed as an element).
+    let doc = parse("<note>hi<!--skip-->there<![CDATA[<x/>]]>!</note>").unwrap();
+    let el = doc.root_elements().next().unwrap();
+    let text: String = el.text().collect();
+    assert_eq!(text, "hithere<x/>!");
+}
+
+#[test]
+fn xml_illegal_char_references_left_literal() {
+    // `&#0;` decodes to NUL, which XML 1.0 §2.2 forbids. The decoder
+    // refuses the conversion and passes the entity through as a literal
+    // `&` byte (the `;` and trailing bytes follow as-is).
+    let doc = parse(r#"<task title="A&#0;B"/>"#).unwrap();
+    let el = doc.root_elements().next().unwrap();
+    let title = el.attr("title").unwrap();
+    assert!(!title.contains('\0'), "got {title:?}");
+    assert!(title.contains('&'), "got {title:?}");
+}
+
+#[test]
+fn attribute_name_must_start_with_name_start_byte() {
+    let err = parse("<tag 1abc=\"x\"/>").unwrap_err();
+    assert!(matches!(err, ParseError::MalformedAttribute { .. }));
+}
+
+#[test]
+fn duplicate_attribute_names_are_rejected() {
+    let err = parse(r#"<tag x="1" x="2"/>"#).unwrap_err();
+    assert!(matches!(err, ParseError::DuplicateAttr { .. }));
+}
+
+#[test]
+fn duplicate_id_in_nested_siblings_errors() {
+    // Two task siblings under the same parent — the nested-but-sibling-scoped
+    // case still trips the check.
+    let err = parse(r#"<group><task id="x"/><task id="x"/></group>"#).unwrap_err();
     assert!(matches!(err, ParseError::DuplicateId { .. }));
 }
 
