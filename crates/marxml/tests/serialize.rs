@@ -58,7 +58,7 @@ fn to_xml_open_close_pairs_stay_open_close_by_default() {
 fn to_xml_self_close_empty_opt() {
     let src = "<a></a>";
     let doc = parse(src).unwrap();
-    let out = doc.to_xml(&SerializeOpts::default().with_self_close_empty(true));
+    let out = doc.to_xml(&SerializeOpts::default().self_close_empty());
     assert_eq!(out, "<a/>");
 }
 

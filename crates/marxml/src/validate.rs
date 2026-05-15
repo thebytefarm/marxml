@@ -90,6 +90,41 @@ impl ValidationReport {
     pub fn errors(&self) -> &[ValidationError] {
         &self.errors
     }
+
+    /// Number of errors collected. `0` iff the document is valid.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+
+    /// `true` when no errors were collected. Equivalent to [`Self::is_valid`].
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// Iterate the errors by reference.
+    pub fn iter(&self) -> std::slice::Iter<'_, ValidationError> {
+        self.errors.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ValidationReport {
+    type Item = &'a ValidationError;
+    type IntoIter = std::slice::Iter<'a, ValidationError>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.errors.iter()
+    }
+}
+
+impl IntoIterator for ValidationReport {
+    type Item = ValidationError;
+    type IntoIter = std::vec::IntoIter<ValidationError>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.errors.into_iter()
+    }
 }
 
 /// Threshold past which `check_element` builds a `HashMap` over the

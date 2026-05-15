@@ -259,25 +259,25 @@ fn try_update_returns_error_on_duplicate_attr_name() {
 }
 
 #[test]
-fn try_replace_content_reports_self_closing_skips() {
+fn replace_content_report_self_closing_skips() {
     // The selector matches a self-closing tag (no content range), so the
     // splice is skipped — but the report now surfaces that count instead
     // of silently zeroing it out.
     let doc = parse("<task/>").unwrap();
     let sel = Selector::parse("task").unwrap();
-    let report = doc.try_replace_content(&sel, "X");
+    let report = doc.replace_content_report(&sel, "X");
     assert_eq!(report.applied, 0);
     assert_eq!(report.skipped_self_closing, 1);
 }
 
 #[test]
-fn try_replace_content_reports_overlap_skips() {
+fn replace_content_report_overlap_skips() {
     // Outer and inner `task` are both matched and both have replaceable
     // bodies; the inner splice overlaps the outer body and is recorded as
     // skipped.
     let doc = parse("<task>outer <task>inner</task></task>").unwrap();
     let sel = Selector::parse("task").unwrap();
-    let report = doc.try_replace_content(&sel, "X");
+    let report = doc.replace_content_report(&sel, "X");
     assert_eq!(report.applied, 1);
     assert_eq!(report.skipped_overlaps, 1);
 }
