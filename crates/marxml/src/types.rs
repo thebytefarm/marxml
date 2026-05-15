@@ -14,6 +14,17 @@ pub struct SourcePosition {
     pub offset: u32,
 }
 
+impl SourcePosition {
+    /// Byte offset as `usize`. The widening conversion is infallible on every
+    /// target that supports `std` (pointer width ≥ 32 bits), and the source
+    /// document is bounded to `u32::MAX` bytes at parse entry, so any value
+    /// stored in `offset` fits.
+    #[inline]
+    pub(crate) fn offset_usize(self) -> usize {
+        self.offset as usize
+    }
+}
+
 /// A half-open span of source positions: `[start, end)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceSpan {
@@ -195,10 +206,12 @@ impl<'a> Iterator for TextSegments<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // Next child span (peeked, not consumed).
-            let child_next = self.children.clone().next().map(|c| {
-                let s = usize::try_from(c.span.start.offset).unwrap_or(usize::MAX);
-                let e = usize::try_from(c.span.end.offset).unwrap_or(usize::MAX);
+            // Next child span (peeked, not consumed). Cloning a slice
+            // iterator is zero-cost, but `as_slice().first()` reads as
+            // "peek without advancing" without leaning on that detail.
+            let child_next = self.children.as_slice().first().map(|c| {
+                let s = c.span.start.offset_usize();
+                let e = c.span.end.offset_usize();
                 s..e
             });
             // Next trivia range that might still overlap the remaining body.

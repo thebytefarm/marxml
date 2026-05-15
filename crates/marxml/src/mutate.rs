@@ -32,7 +32,7 @@
 
 use core::ops::Range;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use regex::{NoExpand, Regex};
 use thiserror::Error;
@@ -213,8 +213,7 @@ fn splice_regex_with(
 }
 
 fn check_new_attrs(new_attrs: &[(&str, &str)]) -> Result<(), MutateError> {
-    let mut seen: std::collections::HashSet<&str> =
-        std::collections::HashSet::with_capacity(new_attrs.len());
+    let mut seen: HashSet<&str> = HashSet::with_capacity(new_attrs.len());
     for (k, _) in new_attrs {
         if !is_valid_name(k) {
             return Err(MutateError::InvalidAttrName {
@@ -233,13 +232,11 @@ fn check_new_attrs(new_attrs: &[(&str, &str)]) -> Result<(), MutateError> {
 /// Byte range of an element's opening tag (`<name ...>` or `<name ... />`).
 fn open_tag_span(el: &ElementRef<'_>) -> Range<usize> {
     let span = el.location();
-    let start = usize::try_from(span.start.offset).unwrap_or(usize::MAX);
+    let start = span.start.offset_usize();
     if el.is_self_closing() {
-        let end = usize::try_from(span.end.offset).unwrap_or(usize::MAX);
-        start..end
+        start..span.end.offset_usize()
     } else {
-        let content_start = el.content_range().start;
-        start..content_start
+        start..el.content_range().start
     }
 }
 

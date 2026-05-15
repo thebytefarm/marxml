@@ -136,11 +136,11 @@ fn emit_tight_children(
     let mut cursor = body_start;
     let mut trivia_idx = trivia.partition_point(|r| r.end <= body_start);
     for child in &el.children {
-        let child_start = usize::try_from(child.span.start.offset).unwrap_or(usize::MAX);
+        let child_start = child.span.start.offset_usize();
         let segment_end = child_start.min(body_end);
         push_escaped_text_skipping_trivia(raw, cursor, segment_end, trivia, &mut trivia_idx, out);
         emit_element(child, raw, trivia, opts, depth + 1, out);
-        cursor = usize::try_from(child.span.end.offset).unwrap_or(usize::MAX);
+        cursor = child.span.end.offset_usize();
     }
     if cursor < body_end {
         push_escaped_text_skipping_trivia(raw, cursor, body_end, trivia, &mut trivia_idx, out);
@@ -278,8 +278,6 @@ impl std::fmt::Display for ElementRef<'_> {
     /// appeared in the source document.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let span = self.location();
-        let start = usize::try_from(span.start.offset).unwrap_or(usize::MAX);
-        let end = usize::try_from(span.end.offset).unwrap_or(usize::MAX);
-        f.write_str(&self.raw[start..end])
+        f.write_str(&self.raw[span.start.offset_usize()..span.end.offset_usize()])
     }
 }

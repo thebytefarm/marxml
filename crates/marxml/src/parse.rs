@@ -91,8 +91,7 @@ fn assemble(input: &str, stream: TokenStream) -> Result<Markdown, ParseError> {
                 span,
                 body_start,
             } => {
-                let depth = u32::try_from(stack.len()).unwrap_or(u32::MAX);
-                if depth >= MAX_DEPTH {
+                if stack.len() >= MAX_DEPTH as usize {
                     return Err(ParseError::MaxDepthExceeded {
                         tag: name,
                         max: MAX_DEPTH,
@@ -114,8 +113,7 @@ fn assemble(input: &str, stream: TokenStream) -> Result<Markdown, ParseError> {
                 // equals the open-frame stack + 1. Enforce that the tree
                 // depth never exceeds MAX_DEPTH (so downstream recursive
                 // walkers see the same bound as the parser advertises).
-                let depth = u32::try_from(stack.len()).unwrap_or(u32::MAX);
-                if depth >= MAX_DEPTH {
+                if stack.len() >= MAX_DEPTH as usize {
                     return Err(ParseError::MaxDepthExceeded {
                         tag: name,
                         max: MAX_DEPTH,
@@ -124,7 +122,7 @@ fn assemble(input: &str, stream: TokenStream) -> Result<Markdown, ParseError> {
                 }
                 let scope = current_scope(&mut stack, &mut root_seen);
                 check_duplicate_id(&name, &attrs, span.start.line, scope)?;
-                let empty_pos = usize::try_from(span.end.offset).unwrap_or(usize::MAX);
+                let empty_pos = span.end.offset_usize();
                 let elem = ElementData {
                     tag: name,
                     attrs,
