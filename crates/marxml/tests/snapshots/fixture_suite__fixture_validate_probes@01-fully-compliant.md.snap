@@ -1,0 +1,6 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/validate/01-fully-compliant.md
+---
+valid: true

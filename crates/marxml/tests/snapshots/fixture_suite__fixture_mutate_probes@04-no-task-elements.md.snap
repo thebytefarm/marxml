@@ -1,0 +1,18 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/mutate/04-no-task-elements.md
+---
+--- update(task, [(status, done)]) ---
+<phase id="empty"/>
+<note>nothing to mutate here</note>
+
+
+--- replace_content(task, NEW) ---
+<phase id="empty"/>
+<note>nothing to mutate here</note>
+
+
+--- replace_in(task, /todo/, done) ---
+<phase id="empty"/>
+<note>nothing to mutate here</note>

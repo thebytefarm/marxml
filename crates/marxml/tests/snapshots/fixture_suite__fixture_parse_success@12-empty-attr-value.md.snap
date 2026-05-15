@@ -1,0 +1,8 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/12-empty-attr-value.md
+---
+root_count = 1
+root[0]:
+  <task note="" status="todo" />  @ L1:O0 -> L1:O29

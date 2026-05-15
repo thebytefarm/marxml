@@ -1,0 +1,6 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: "format!(\"{}: {}\", error_kind(&err), err)"
+input_file: crates/marxml/tests/fixtures/parse_fail/07-duplicate-id-siblings.md
+---
+DuplicateId: line 2: duplicate id="1" on <task>

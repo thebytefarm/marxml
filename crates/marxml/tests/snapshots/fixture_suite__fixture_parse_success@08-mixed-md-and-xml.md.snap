@@ -1,0 +1,15 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/08-mixed-md-and-xml.md
+---
+root_count = 1
+root[0]:
+  <phase id="1" status="todo">  @ L5:O21 -> L12:O181
+    text="\n\nThis phase covers initial work.\n\n\n\n\n"
+    <task id="1.1">  @ L9:O84 -> L9:O127
+      <status>  @ L9:O99 -> L9:O120
+        content="todo"
+    <task id="1.2">  @ L10:O128 -> L10:O171
+      <status>  @ L10:O143 -> L10:O164
+        content="todo"

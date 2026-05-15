@@ -1,0 +1,14 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/select/05-no-matches.md
+---
+task -> []
+phase -> []
+* -> []
+task[status="todo"] -> []
+task[id^="1."] -> []
+phase task -> []
+phase > task -> []
+*:first-child -> []
+*:not([id]) -> []

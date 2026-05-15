@@ -1,0 +1,39 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/serialize/04-multiline-content.md
+---
+--- to_xml(default) ---
+<snippet>
+line one
+line two
+line three
+</snippet>
+
+--- to_xml(pretty) ---
+<snippet>
+line one
+line two
+line three
+</snippet>
+
+--- to_json ---
+[
+  {
+    "attrs": {},
+    "children": [],
+    "content": "\nline one\nline two\nline three\n",
+    "location": {
+      "end": {
+        "line": 5,
+        "offset": 49
+      },
+      "start": {
+        "line": 1,
+        "offset": 0
+      }
+    },
+    "selfClosing": false,
+    "tag": "snippet"
+  }
+]

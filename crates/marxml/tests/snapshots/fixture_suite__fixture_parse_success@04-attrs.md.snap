@@ -1,0 +1,9 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/04-attrs.md
+---
+root_count = 1
+root[0]:
+  <task id="1" status="todo" priority="high">  @ L1:O0 -> L1:O54
+    content="body"

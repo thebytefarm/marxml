@@ -1,0 +1,7 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/validate/04-empty-content.md
+---
+valid: false
+  - line 2: <status> requires non-empty content

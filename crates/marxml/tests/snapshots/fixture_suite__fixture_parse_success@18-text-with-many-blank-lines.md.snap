@@ -1,0 +1,9 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/18-text-with-many-blank-lines.md
+---
+root_count = 1
+root[0]:
+  <wrapper>  @ L1:O0 -> L7:O60
+    content="\n\n\nlots of blank lines around the body\n\n\n"

@@ -1,0 +1,6 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/02-plain-markdown.md
+---
+root_count = 0

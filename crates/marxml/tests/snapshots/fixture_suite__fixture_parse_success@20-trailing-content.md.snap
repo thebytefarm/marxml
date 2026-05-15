@@ -1,0 +1,12 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/20-trailing-content.md
+---
+root_count = 2
+root[0]:
+  <task id="1">  @ L1:O0 -> L1:O31
+    content="body before"
+root[1]:
+  <task id="2">  @ L5:O57 -> L5:O87
+    content="body after"

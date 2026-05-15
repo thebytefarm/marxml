@@ -1,0 +1,26 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/15-many-siblings.md
+---
+root_count = 10
+root[0]:
+  <task id="1" />  @ L1:O0 -> L1:O14
+root[1]:
+  <task id="2" />  @ L1:O14 -> L1:O28
+root[2]:
+  <task id="3" />  @ L1:O28 -> L1:O42
+root[3]:
+  <task id="4" />  @ L1:O42 -> L1:O56
+root[4]:
+  <task id="5" />  @ L1:O56 -> L1:O70
+root[5]:
+  <task id="6" />  @ L1:O70 -> L1:O84
+root[6]:
+  <task id="7" />  @ L1:O84 -> L1:O98
+root[7]:
+  <task id="8" />  @ L1:O98 -> L1:O112
+root[8]:
+  <task id="9" />  @ L1:O112 -> L1:O126
+root[9]:
+  <task id="10" />  @ L1:O126 -> L1:O141

@@ -1,0 +1,6 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: "format!(\"{}: {}\", error_kind(&err), err)"
+input_file: crates/marxml/tests/fixtures/parse_fail/03-stray-close.md
+---
+StrayClose: line 2: </nothing> has no matching open tag

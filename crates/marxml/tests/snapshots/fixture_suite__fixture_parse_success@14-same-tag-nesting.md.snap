@@ -1,0 +1,14 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/14-same-tag-nesting.md
+---
+root_count = 1
+root[0]:
+  <group>  @ L1:O0 -> L4:O105
+    text="\n  \n  \n"
+    <group label="inner-1">  @ L2:O10 -> L2:O48
+      <leaf />  @ L2:O33 -> L2:O40
+    <group label="inner-2">  @ L3:O51 -> L3:O96
+      <leaf />  @ L3:O74 -> L3:O81
+      <leaf />  @ L3:O81 -> L3:O88

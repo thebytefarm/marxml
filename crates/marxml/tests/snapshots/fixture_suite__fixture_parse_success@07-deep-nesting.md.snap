@@ -1,0 +1,13 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/07-deep-nesting.md
+---
+root_count = 1
+root[0]:
+  <a>  @ L1:O0 -> L1:O39
+    <b>  @ L1:O3 -> L1:O35
+      <c>  @ L1:O6 -> L1:O31
+        <d>  @ L1:O9 -> L1:O27
+          <e>  @ L1:O12 -> L1:O23
+            content="deep"

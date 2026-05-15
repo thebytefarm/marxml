@@ -1,0 +1,30 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/13-realistic-gg-plan.md
+---
+root_count = 2
+root[0]:
+  <phase id="1" status="done" name="Foundation" file="phase-1.md">  @ L5:O46 -> L12:O375
+    text="\n\nFoundation hardening: workspace deps, CI, contributor docs.\n\n\n\n\n"
+    <task id="1.1">  @ L9:O173 -> L9:O264
+      <status>  @ L9:O188 -> L9:O209
+        content="done"
+      <files>  @ L9:O209 -> L9:O257
+        <filepath>  @ L9:O216 -> L9:O249
+          content="`Cargo.toml`"
+    <task id="1.2">  @ L10:O265 -> L10:O365
+      <status>  @ L10:O280 -> L10:O301
+        content="done"
+      <files>  @ L10:O301 -> L10:O358
+        <filepath>  @ L10:O308 -> L10:O350
+          content="`rust-toolchain.toml`"
+root[1]:
+  <phase id="2" status="todo" name="Parser" file="phase-2.md">  @ L16:O389 -> L21:O548
+    text="\n\n\n\n\n"
+    <task id="2.1">  @ L18:O451 -> L18:O494
+      <status>  @ L18:O466 -> L18:O487
+        content="todo"
+    <task id="2.2">  @ L19:O495 -> L19:O538
+      <status>  @ L19:O510 -> L19:O531
+        content="todo"

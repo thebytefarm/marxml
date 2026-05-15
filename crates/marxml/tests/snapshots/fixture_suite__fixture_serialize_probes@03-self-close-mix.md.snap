@@ -1,0 +1,71 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/serialize/03-self-close-mix.md
+---
+--- to_xml(default) ---
+<a/><b id="1"></b><c id="2"/>
+
+--- to_xml(pretty) ---
+<a/>
+<b id="1"/>
+<c id="2"/>
+
+--- to_json ---
+[
+  {
+    "attrs": {},
+    "children": [],
+    "content": "",
+    "location": {
+      "end": {
+        "line": 1,
+        "offset": 4
+      },
+      "start": {
+        "line": 1,
+        "offset": 0
+      }
+    },
+    "selfClosing": true,
+    "tag": "a"
+  },
+  {
+    "attrs": {
+      "id": "1"
+    },
+    "children": [],
+    "content": "",
+    "location": {
+      "end": {
+        "line": 2,
+        "offset": 19
+      },
+      "start": {
+        "line": 2,
+        "offset": 5
+      }
+    },
+    "selfClosing": false,
+    "tag": "b"
+  },
+  {
+    "attrs": {
+      "id": "2"
+    },
+    "children": [],
+    "content": "",
+    "location": {
+      "end": {
+        "line": 3,
+        "offset": 31
+      },
+      "start": {
+        "line": 3,
+        "offset": 20
+      }
+    },
+    "selfClosing": true,
+    "tag": "c"
+  }
+]

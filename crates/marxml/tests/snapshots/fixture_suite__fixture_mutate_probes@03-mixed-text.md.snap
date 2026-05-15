@@ -1,0 +1,45 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/mutate/03-mixed-text.md
+---
+--- update(task, [(status, done)]) ---
+# Heading
+
+Intro paragraph.
+
+<task id="1" status="done">first body todo</task>
+
+Mid paragraph.
+
+<task id="2" status="done">second body</task>
+
+End.
+
+
+--- replace_content(task, NEW) ---
+# Heading
+
+Intro paragraph.
+
+<task id="1">NEW</task>
+
+Mid paragraph.
+
+<task id="2">NEW</task>
+
+End.
+
+
+--- replace_in(task, /todo/, done) ---
+# Heading
+
+Intro paragraph.
+
+<task id="1">first body done</task>
+
+Mid paragraph.
+
+<task id="2">second body</task>
+
+End.

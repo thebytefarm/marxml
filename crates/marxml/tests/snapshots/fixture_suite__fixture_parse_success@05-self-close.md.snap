@@ -1,0 +1,12 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/05-self-close.md
+---
+root_count = 3
+root[0]:
+  <spacer />  @ L1:O0 -> L1:O9
+root[1]:
+  <divider />  @ L2:O10 -> L2:O21
+root[2]:
+  <placeholder data-kind="x" />  @ L3:O22 -> L3:O51
