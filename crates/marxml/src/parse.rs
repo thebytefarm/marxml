@@ -29,7 +29,12 @@ pub const MAX_DEPTH: u32 = 1024;
 /// Source positions are stored as `u32` for compact element storage; inputs
 /// larger than this cannot have their offsets tracked accurately and are
 /// rejected up front rather than silently producing wrong spans.
-pub const MAX_INPUT_BYTES: usize = u32::MAX as usize;
+///
+/// The bound is `u32::MAX - 1` (not `u32::MAX`) so the worst-case line
+/// counter `1 + count('\n')` is always ≤ `u32::MAX`. With the tighter cap
+/// the line bump can use `saturating_add` for safety without ever actually
+/// saturating on a well-formed input.
+pub const MAX_INPUT_BYTES: usize = u32::MAX as usize - 1;
 
 /// Parse a full markdown+XML document.
 ///
@@ -40,14 +45,7 @@ pub const MAX_INPUT_BYTES: usize = u32::MAX as usize;
 /// name, nesting deeper than [`MAX_DEPTH`], or inputs larger than
 /// [`MAX_INPUT_BYTES`].
 pub fn parse(input: &str) -> Result<Markdown, ParseError> {
-    if input.len() > MAX_INPUT_BYTES {
-        return Err(ParseError::InputTooLarge {
-            size: input.len() as u64,
-            max: MAX_INPUT_BYTES as u64,
-        });
-    }
-    let stream = tokenize(input)?;
-    assemble(input, stream)
+    parse_owned(input.to_string())
 }
 
 /// Parse a fragment.
@@ -61,6 +59,24 @@ pub fn parse(input: &str) -> Result<Markdown, ParseError> {
 /// See [`parse`].
 pub fn parse_fragment(input: &str) -> Result<Markdown, ParseError> {
     parse(input)
+}
+
+/// Parse a document, moving in the owned source string instead of cloning
+/// it. Use this when you already own a `String` and want to avoid the
+/// allocation that [`parse`] would do internally.
+///
+/// # Errors
+///
+/// See [`parse`].
+pub fn parse_owned(input: String) -> Result<Markdown, ParseError> {
+    if input.len() > MAX_INPUT_BYTES {
+        return Err(ParseError::InputTooLarge {
+            size: input.len() as u64,
+            max: MAX_INPUT_BYTES as u64,
+        });
+    }
+    let stream = tokenize(&input)?;
+    assemble(input, stream)
 }
 
 /// Per-scope duplicate-id tracking: `tag -> set of ids seen at this scope`.
@@ -77,7 +93,7 @@ struct Frame {
     seen_ids: Option<IdScope>,
 }
 
-fn assemble(input: &str, stream: TokenStream) -> Result<Markdown, ParseError> {
+fn assemble(input: String, stream: TokenStream) -> Result<Markdown, ParseError> {
     let TokenStream { tokens, trivia } = stream;
     let mut stack: Vec<Frame> = Vec::new();
     let mut roots: Vec<ElementData> = Vec::new();
@@ -176,7 +192,7 @@ fn assemble(input: &str, stream: TokenStream) -> Result<Markdown, ParseError> {
         });
     }
 
-    Ok(Markdown::from_parts(input.to_string(), roots, trivia))
+    Ok(Markdown::from_parts(input, roots, trivia))
 }
 
 fn push_element(elem: ElementData, stack: &mut [Frame], roots: &mut Vec<ElementData>) {

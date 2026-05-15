@@ -50,19 +50,34 @@ impl SerializeOpts {
         }
     }
 
-    /// Set the indentation prefix. `None` keeps output tight (single-line);
-    /// `Some(s)` indents each nested child by one copy of `s` per level.
+    /// Set the indentation prefix; each nested child is prefixed with one
+    /// copy of `indent` per level. Pair with [`Self::compact`] to switch
+    /// back to single-line output.
     #[must_use]
-    pub fn with_indent(mut self, indent: Option<String>) -> Self {
-        self.indent = indent;
+    pub fn with_indent(mut self, indent: impl Into<String>) -> Self {
+        self.indent = Some(indent.into());
         self
     }
 
-    /// Toggle whether empty elements collapse to `<tag/>` (`true`) or stay
-    /// as `<tag></tag>` unless the source already used self-close form.
+    /// Disable indentation: emit everything on one line.
     #[must_use]
-    pub fn with_self_close_empty(mut self, on: bool) -> Self {
-        self.self_close_empty = on;
+    pub fn compact(mut self) -> Self {
+        self.indent = None;
+        self
+    }
+
+    /// Collapse empty elements to `<tag/>`.
+    #[must_use]
+    pub fn self_close_empty(mut self) -> Self {
+        self.self_close_empty = true;
+        self
+    }
+
+    /// Keep empty elements as `<tag></tag>` (unless the source already used
+    /// self-close form, which is always preserved).
+    #[must_use]
+    pub fn expand_empty(mut self) -> Self {
+        self.self_close_empty = false;
         self
     }
 }

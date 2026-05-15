@@ -34,7 +34,7 @@ use crate::escape::is_valid_name;
 /// constraints are compiled once, child-allow lists are converted to sets)
 /// so [`crate::validate`] can run in O(elements) without per-element
 /// recompilation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Schema {
     pub(crate) tags: BTreeMap<String, CompiledTagSchema>,
 }
@@ -71,7 +71,7 @@ pub(crate) struct TagSchema {
 }
 
 /// What kind of value an attribute should hold.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttrKind {
     /// Any string. No further constraint.
     String,
@@ -84,6 +84,18 @@ pub enum AttrKind {
 }
 
 impl AttrKind {
+    /// Build an [`AttrKind::Enum`] from any iterable of string-like values.
+    /// Lets callers write `AttrKind::one_of(["todo", "done"])` instead of
+    /// `AttrKind::Enum(vec!["todo".into(), "done".into()])`.
+    #[must_use]
+    pub fn one_of<I, S>(values: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self::Enum(values.into_iter().map(Into::into).collect())
+    }
+
     /// Mark this attribute as required.
     #[must_use]
     pub fn required(self) -> AttrConstraint {
@@ -104,7 +116,7 @@ impl AttrKind {
 }
 
 /// A single attribute slot built by [`TagBuilder::attr`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttrConstraint {
     pub(crate) kind: AttrKind,
     pub(crate) required: bool,

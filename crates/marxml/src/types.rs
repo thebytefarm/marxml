@@ -6,7 +6,10 @@ use core::ops::Range;
 ///
 /// `line` is 1-based to match what humans (and most editors) expect.
 /// `offset` is the 0-based byte offset from the start of the document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// `PartialOrd`/`Ord` compare lexicographically by `(line, offset)` —
+/// earlier-in-source first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SourcePosition {
     /// 1-based line number.
     pub line: u32,
@@ -26,7 +29,7 @@ impl SourcePosition {
 }
 
 /// A half-open span of source positions: `[start, end)`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SourceSpan {
     /// Inclusive start position.
     pub start: SourcePosition,

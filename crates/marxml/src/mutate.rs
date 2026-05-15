@@ -62,7 +62,7 @@ pub enum MutateError {
 
 /// Outcome of a successful mutation. Reports both the rewritten document
 /// and any accounting useful for diagnostics.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct MutationReport {
     /// Rewritten document. The original [`Markdown`] is unchanged.

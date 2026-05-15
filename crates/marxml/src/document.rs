@@ -13,11 +13,21 @@ use crate::types::{ElementData, ElementRef};
 /// XML trivia (comments, CDATA sections) the parser skipped — those ranges
 /// are excluded from `text()` so consumers don't see comment markers as
 /// content.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Markdown {
     raw: String,
     roots: Vec<ElementData>,
     trivia: Vec<core::ops::Range<usize>>,
+}
+
+impl std::str::FromStr for Markdown {
+    type Err = crate::ParseError;
+
+    /// Equivalent to [`crate::parse`]. Lets callers use the standard
+    /// `"...".parse::<Markdown>()` form.
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        crate::parse(input)
+    }
 }
 
 impl Markdown {
@@ -140,18 +150,20 @@ impl Markdown {
         mutate::try_update(self, sel, new_attrs)
     }
 
-    /// Fallible variant of [`Self::replace_content`] returning a
-    /// [`crate::MutationReport`] so callers can see how many matches were applied
-    /// vs. skipped because of overlap with an outer match.
+    /// Like [`Self::replace_content`] but returns a [`crate::MutationReport`]
+    /// so callers can see how many matches were applied vs. skipped because
+    /// of overlap with an outer match. Never fails — the report carries the
+    /// rewritten output alongside the counts.
     #[must_use]
-    pub fn try_replace_content(&self, sel: &Selector, new_body: &str) -> crate::MutationReport {
+    pub fn replace_content_report(&self, sel: &Selector, new_body: &str) -> crate::MutationReport {
         mutate::try_replace_content(self, sel, new_body)
     }
 
-    /// Fallible variant of [`Self::replace_in`] returning a
-    /// [`crate::MutationReport`].
+    /// Like [`Self::replace_in`] but returns a [`crate::MutationReport`].
+    /// Never fails — the report carries the rewritten output alongside the
+    /// applied/skipped counts.
     #[must_use]
-    pub fn try_replace_in(
+    pub fn replace_in_report(
         &self,
         sel: &Selector,
         pattern: &Regex,
