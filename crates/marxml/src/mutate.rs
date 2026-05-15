@@ -4,75 +4,233 @@
 //! bytes into the document's raw string, and return the resulting owned
 //! `String`. The original [`Markdown`] is never modified.
 //!
-//! Multiple matches are spliced in a single pass, applied from later byte
-//! offsets to earlier so earlier splices don't shift the positions of
-//! later ones.
+//! Splices are applied in a single forward pass over `raw`. When a selector
+//! matches both a parent and one of its descendants, the parent splice
+//! encloses the child's range; the outer splice wins and the inner splice is
+//! discarded so the document doesn't end up with mutually-inconsistent edits
+//! at overlapping byte ranges. The fallible variants ([`try_update`],
+//! [`try_replace_content`], [`try_replace_in`]) surface the discarded count
+//! in the returned [`MutationReport`] so callers can distinguish "no match"
+//! from "match shadowed by an outer match".
+//!
+//! ## Raw vs. text semantics
+//!
+//! `replace_content` and `replace_in` substitute **raw bytes** into the source.
+//! `new_body` / the regex `replacement` are written verbatim — special
+//! characters (`<`, `&`, `"`) are **not** escaped. This is deliberate: the
+//! intended use is splicing well-formed XML, prose, or other markup. For
+//! text that should be safe by default, use [`replace_text`] /
+//! [`replace_text_in`] which route the input through `escape_text` before
+//! splicing.
+//!
+//! `update`, by contrast, owns the surrounding attribute syntax, so it
+//! validates attribute names against [`crate::is_valid_name`] and
+//! XML-escapes attribute values before writing them. The infallible
+//! [`update`] returns the source unchanged on programmer error (invalid
+//! name / duplicate key) for ergonomics; [`try_update`] returns the
+//! offending input as a [`MutateError`] instead.
 
 use core::ops::Range;
-use std::fmt::Write as _;
+use std::borrow::Cow;
+use std::collections::HashMap;
 
-use regex::Regex;
+use regex::{NoExpand, Regex};
+use thiserror::Error;
 
+use crate::escape::{escape_text, is_valid_name, push_escaped_attr};
 use crate::selector::Selector;
 use crate::types::ElementRef;
 use crate::Markdown;
 
-/// Update or insert attributes on every element matching `sel`.
-///
-/// For each match:
-/// - If the attribute name is already present, its value is replaced.
-/// - Otherwise the attribute is appended at the end of the opening tag's
-///   attribute list, preserving source-order of existing attributes.
-///
-/// Returns the new raw document. The caller decides what to do with it
-/// (commonly: write to disk).
+/// Errors returned by the fallible mutation variants.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum MutateError {
+    /// An attribute name passed to [`try_update`] is not a valid XML name.
+    #[error("invalid XML attribute name {name:?}")]
+    InvalidAttrName {
+        /// The offending name.
+        name: String,
+    },
+    /// The attribute slice passed to [`try_update`] repeats the same name.
+    #[error("duplicate attribute name {name:?} in update slice")]
+    DuplicateAttrName {
+        /// The repeated name.
+        name: String,
+    },
+}
+
+/// Outcome of a successful mutation. Reports both the rewritten document
+/// and any accounting useful for diagnostics.
+#[derive(Debug, Clone)]
+pub struct MutationReport {
+    /// Rewritten document. The original [`Markdown`] is unchanged.
+    pub output: String,
+    /// Number of splices applied to the output.
+    pub applied: usize,
+    /// Number of splices skipped because they overlapped a previously-
+    /// emitted splice (the "outermost wins" rule).
+    pub skipped_overlaps: usize,
+    /// Number of selected elements that were self-closing and therefore had
+    /// no content range to splice into. Relevant for `replace_content` /
+    /// `replace_in` only — `update` is happy to rewrite self-closing tags.
+    pub skipped_self_closing: usize,
+}
+
+// ─── infallible entry points (public re-exports via Markdown) ─────────────
+
 pub(crate) fn update(doc: &Markdown, sel: &Selector, new_attrs: &[(&str, &str)]) -> String {
-    let raw = doc.raw();
-    let mut splices: Vec<(Range<usize>, String)> = Vec::new();
-    for el in doc.select(sel) {
-        let open_tag = open_tag_span(&el);
-        let original = &raw[open_tag.clone()];
-        let rewritten = rewrite_open_tag(original, new_attrs);
-        splices.push((open_tag, rewritten));
+    match try_update(doc, sel, new_attrs) {
+        Ok(r) => r.output,
+        Err(e) => {
+            debug_assert!(false, "update() programmer error: {e}");
+            doc.raw().to_string()
+        }
     }
-    apply_splices(raw, splices)
 }
 
-/// Replace the inner content of every element matching `sel` with `new_body`.
-///
-/// Self-closing elements have no body; they are skipped.
 pub(crate) fn replace_content(doc: &Markdown, sel: &Selector, new_body: &str) -> String {
-    let raw = doc.raw();
-    let splices: Vec<(Range<usize>, String)> = doc
-        .select(sel)
-        .filter(|el| !el.is_self_closing())
-        .map(|el| (content_range(&el), new_body.to_string()))
-        .collect();
-    apply_splices(raw, splices)
+    splice_content(doc, sel, new_body).output
 }
 
-/// Run a regex `replace_all` over the inner content of every element
-/// matching `sel`.
 pub(crate) fn replace_in(
     doc: &Markdown,
     sel: &Selector,
     pattern: &Regex,
     replacement: &str,
 ) -> String {
-    let raw = doc.raw();
-    let splices: Vec<(Range<usize>, String)> = doc
-        .select(sel)
-        .filter(|el| !el.is_self_closing())
-        .map(|el| {
-            let range = content_range(&el);
-            let body = &raw[range.clone()];
-            let replaced = pattern.replace_all(body, replacement).into_owned();
-            (range, replaced)
-        })
-        .collect();
-    apply_splices(raw, splices)
+    splice_regex(doc, sel, pattern, replacement).output
 }
 
+pub(crate) fn replace_text(doc: &Markdown, sel: &Selector, new_body: &str) -> String {
+    let escaped = escape_text(new_body).into_owned();
+    splice_content(doc, sel, &escaped).output
+}
+
+pub(crate) fn replace_text_in(
+    doc: &Markdown,
+    sel: &Selector,
+    pattern: &Regex,
+    replacement: &str,
+) -> String {
+    let escaped = escape_text(replacement).into_owned();
+    splice_regex_with(doc, sel, pattern, &escaped).output
+}
+
+// ─── fallible variants ────────────────────────────────────────────────────
+
+pub(crate) fn try_update(
+    doc: &Markdown,
+    sel: &Selector,
+    new_attrs: &[(&str, &str)],
+) -> Result<MutationReport, MutateError> {
+    check_new_attrs(new_attrs)?;
+    let raw = doc.raw();
+    // `Cow::Owned` is appropriate here: every rewritten open tag is unique.
+    let mut splices: Vec<(Range<usize>, Cow<'_, str>)> = Vec::new();
+    for el in doc.select(sel) {
+        let open_tag = open_tag_span(&el);
+        let self_close = el.is_self_closing();
+        let rewritten = rewrite_open_tag(&el, new_attrs, self_close);
+        splices.push((open_tag, Cow::Owned(rewritten)));
+    }
+    Ok(apply_splices(raw, splices))
+}
+
+pub(crate) fn try_replace_content(
+    doc: &Markdown,
+    sel: &Selector,
+    new_body: &str,
+) -> MutationReport {
+    splice_content(doc, sel, new_body)
+}
+
+pub(crate) fn try_replace_in(
+    doc: &Markdown,
+    sel: &Selector,
+    pattern: &Regex,
+    replacement: &str,
+) -> MutationReport {
+    splice_regex(doc, sel, pattern, replacement)
+}
+
+// ─── helpers ──────────────────────────────────────────────────────────────
+
+fn splice_content<'a>(doc: &'a Markdown, sel: &Selector, new_body: &'a str) -> MutationReport {
+    let raw = doc.raw();
+    let mut self_closing_skipped = 0usize;
+    let mut splices: Vec<(Range<usize>, Cow<'_, str>)> = Vec::new();
+    for el in doc.select(sel) {
+        if el.is_self_closing() {
+            self_closing_skipped += 1;
+            continue;
+        }
+        splices.push((el.content_range(), Cow::Borrowed(new_body)));
+    }
+    let mut report = apply_splices(raw, splices);
+    report.skipped_self_closing = self_closing_skipped;
+    report
+}
+
+fn splice_regex(
+    doc: &Markdown,
+    sel: &Selector,
+    pattern: &Regex,
+    replacement: &str,
+) -> MutationReport {
+    splice_regex_with(doc, sel, pattern, replacement)
+}
+
+fn splice_regex_with(
+    doc: &Markdown,
+    sel: &Selector,
+    pattern: &Regex,
+    replacement: &str,
+) -> MutationReport {
+    let raw = doc.raw();
+    let mut self_closing_skipped = 0usize;
+    let mut splices: Vec<(Range<usize>, Cow<'_, str>)> = Vec::new();
+    for el in doc.select(sel) {
+        if el.is_self_closing() {
+            self_closing_skipped += 1;
+            continue;
+        }
+        let range = el.content_range();
+        let body = &raw[range.clone()];
+        // `regex::NoExpand` disables `$1`/`$name` expansion so the module's
+        // "verbatim" contract holds. When `replace_all` returns `Cow::Borrowed`
+        // (no matches in this body), keep the borrow — `apply_splices` will
+        // re-emit the original bytes without an extra allocation.
+        let replaced = pattern.replace_all(body, NoExpand(replacement));
+        let payload: Cow<'_, str> = match replaced {
+            std::borrow::Cow::Borrowed(_) => Cow::Borrowed(body),
+            std::borrow::Cow::Owned(s) => Cow::Owned(s),
+        };
+        splices.push((range, payload));
+    }
+    let mut report = apply_splices(raw, splices);
+    report.skipped_self_closing = self_closing_skipped;
+    report
+}
+
+fn check_new_attrs(new_attrs: &[(&str, &str)]) -> Result<(), MutateError> {
+    let mut seen: std::collections::HashSet<&str> =
+        std::collections::HashSet::with_capacity(new_attrs.len());
+    for (k, _) in new_attrs {
+        if !is_valid_name(k) {
+            return Err(MutateError::InvalidAttrName {
+                name: (*k).to_string(),
+            });
+        }
+        if !seen.insert(*k) {
+            return Err(MutateError::DuplicateAttrName {
+                name: (*k).to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Byte range of an element's opening tag (`<name ...>` or `<name ... />`).
 fn open_tag_span(el: &ElementRef<'_>) -> Range<usize> {
     let span = el.location();
     let start = usize::try_from(span.start.offset).unwrap_or(usize::MAX);
@@ -80,156 +238,124 @@ fn open_tag_span(el: &ElementRef<'_>) -> Range<usize> {
         let end = usize::try_from(span.end.offset).unwrap_or(usize::MAX);
         start..end
     } else {
-        // For open/close elements, the opening tag ends where content begins.
-        // We don't store content_range on ElementRef directly, but content()
-        // borrows it; recover the end by length.
-        let content_start = start + open_tag_length(el);
+        let content_start = el.content_range().start;
         start..content_start
     }
 }
 
-/// Byte range of the inner content of a (non-self-closing) element.
+/// Build the replacement opening tag for `el` with `new_attrs` merged.
 ///
-/// Callers must filter out self-closing elements before invoking this — they
-/// have no inner body to address.
-fn content_range(el: &ElementRef<'_>) -> Range<usize> {
-    debug_assert!(!el.is_self_closing());
-    let span = el.location();
-    let start = usize::try_from(span.start.offset).unwrap_or(usize::MAX);
-    let end = usize::try_from(span.end.offset).unwrap_or(usize::MAX);
-    let open_len = open_tag_length(el);
-    let close_len = el.tag().len() + 3; // </name>
-    (start + open_len)..(end - close_len)
-}
-
-/// Length of an open/close element's opening tag (`<name ...>`).
-///
-/// Computed from the difference between the element's total span and the
-/// known inner content length and closing tag length. Callers must filter
-/// out self-closing elements first.
-fn open_tag_length(el: &ElementRef<'_>) -> usize {
-    debug_assert!(!el.is_self_closing());
-    let span = el.location();
-    let total = usize::try_from(span.end.offset - span.start.offset).unwrap_or(usize::MAX);
-    let content_len = el.content().len();
-    let close_len = el.tag().len() + 3;
-    total - content_len - close_len
-}
-
-/// Build a replacement open-tag with `new_attrs` merged in.
-///
-/// Strategy: keep the original tag (everything up to the first whitespace
-/// after the tag name, or end of name) and the trailing `>` (or `/>`); only
-/// rewrite the middle attribute section.
-fn rewrite_open_tag(original: &str, new_attrs: &[(&str, &str)]) -> String {
-    let bytes = original.as_bytes();
-    debug_assert!(bytes.first() == Some(&b'<'));
-    // Locate the tag name end.
-    let mut i = 1;
-    while i < bytes.len() && is_name_char(bytes[i]) {
-        i += 1;
-    }
-    let name_end = i;
-    let self_close_tail = original.ends_with("/>");
-    let close_tail_len = if self_close_tail { 2 } else { 1 };
-    let attrs_section = &original[name_end..original.len() - close_tail_len];
-    let merged = merge_attrs(attrs_section, new_attrs);
-    let close_tail = if self_close_tail { "/>" } else { ">" };
-    format!("{}{merged}{close_tail}", &original[..name_end])
-}
-
-/// Merge `new_attrs` into an existing attribute section.
-///
-/// The section is everything between the tag name and the closing `>` (or
-/// `/>`), typically including a leading space. Existing attributes are kept
-/// in source order; new attributes overwrite values, and attributes not
-/// already present are appended at the end.
-fn merge_attrs(section: &str, new_attrs: &[(&str, &str)]) -> String {
-    let mut out = String::new();
-    let mut bytes = section.as_bytes();
-    let mut applied: Vec<bool> = vec![false; new_attrs.len()];
-    // Step through whitespace + name="value" pairs.
-    while !bytes.is_empty() {
-        // Copy whitespace verbatim.
-        let ws_end = bytes
-            .iter()
-            .position(|b| !b.is_ascii_whitespace())
-            .unwrap_or(bytes.len());
-        out.push_str(std::str::from_utf8(&bytes[..ws_end]).unwrap_or(""));
-        bytes = &bytes[ws_end..];
-        if bytes.is_empty() {
-            break;
+/// `new_attrs` is indexed by name once at the entry of `try_update` (caller
+/// passes the same slice for every match), but the index is rebuilt here
+/// per call — the slice is tiny in practice (<10 entries), so a linear
+/// scan beats hash construction below a threshold.
+fn rewrite_open_tag(el: &ElementRef<'_>, new_attrs: &[(&str, &str)], self_close: bool) -> String {
+    let use_map = new_attrs.len() >= ATTR_INDEX_THRESHOLD;
+    let index: Option<HashMap<&str, usize>> = if use_map {
+        let mut m = HashMap::with_capacity(new_attrs.len());
+        for (i, (k, _)) in new_attrs.iter().enumerate() {
+            m.insert(*k, i);
         }
-        // Read attribute name.
-        let name_end = bytes
-            .iter()
-            .position(|b| !is_name_char(*b))
-            .unwrap_or(bytes.len());
-        let name_slice = &bytes[..name_end];
-        let name = std::str::from_utf8(name_slice).unwrap_or("");
-        bytes = &bytes[name_end..];
-        // We expect `="value"`.
-        debug_assert_eq!(bytes.first(), Some(&b'='));
-        bytes = &bytes[1..]; // '='
-        debug_assert_eq!(bytes.first(), Some(&b'"'));
-        bytes = &bytes[1..]; // '"'
-        let value_end = bytes.iter().position(|&b| b == b'"').unwrap_or(bytes.len());
-        let value = std::str::from_utf8(&bytes[..value_end]).unwrap_or("");
-        bytes = &bytes[value_end..];
-        debug_assert_eq!(bytes.first(), Some(&b'"'));
-        bytes = &bytes[1..];
-
-        // Does the new_attrs list want to overwrite this?
-        let override_value = new_attrs
-            .iter()
-            .enumerate()
-            .find(|(_, (k, _))| *k == name)
-            .map(|(i, (_, v))| (i, *v));
-
-        if let Some((i, v)) = override_value {
-            write!(out, r#"{name}="{v}""#).expect("writing to String never fails");
+        Some(m)
+    } else {
+        None
+    };
+    let mut applied = vec![false; new_attrs.len()];
+    let mut out = String::new();
+    out.push('<');
+    out.push_str(el.tag());
+    for (name, existing) in el.attrs() {
+        out.push(' ');
+        let lookup = index
+            .as_ref()
+            .and_then(|m| m.get(name).copied())
+            .or_else(|| new_attrs.iter().position(|(k, _)| *k == name));
+        if let Some(i) = lookup {
+            write_attr(&mut out, name, new_attrs[i].1);
             applied[i] = true;
         } else {
-            write!(out, r#"{name}="{value}""#).expect("writing to String never fails");
+            // The existing value already passed the tokenizer's validation,
+            // but re-escape on output so a permissively-tokenized value can't
+            // reappear as invalid XML on this rewrite.
+            write_attr(&mut out, name, existing);
         }
     }
-    // Append any new attrs not consumed.
-    let mut trailing = String::new();
     for (i, (k, v)) in new_attrs.iter().enumerate() {
         if !applied[i] {
-            write!(trailing, r#" {k}="{v}""#).expect("writing to String never fails");
+            out.push(' ');
+            write_attr(&mut out, k, v);
         }
     }
-    if !trailing.is_empty() {
-        // If the existing section already ends with whitespace, the leading
-        // space inside `trailing` would double it; trim instead.
-        if out.ends_with(char::is_whitespace) {
-            out.push_str(trailing.trim_start());
-        } else {
-            out.push_str(&trailing);
-        }
+    if self_close {
+        out.push_str("/>");
+    } else {
+        out.push('>');
     }
     out
 }
 
-#[inline]
-fn is_name_char(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.'
+/// Threshold past which `rewrite_open_tag` builds a `HashMap` for
+/// `new_attrs` lookup. Below this, a linear scan is faster (no hash setup
+/// cost).
+const ATTR_INDEX_THRESHOLD: usize = 8;
+
+/// Write `name="<escaped-value>"` into `out`. The name is assumed to have
+/// passed the [`is_valid_name`] check at the entry to `try_update`.
+fn write_attr(out: &mut String, name: &str, value: &str) {
+    out.push_str(name);
+    out.push_str("=\"");
+    push_escaped_attr(out, value);
+    out.push('"');
 }
 
-/// Apply a list of byte-range replacements to `raw`, returning the new string.
+/// Apply a list of byte-range replacements to `raw` in a single forward pass.
 ///
-/// Splices are sorted by descending start offset so the earlier replacements
-/// don't shift later ones. Overlapping ranges (which would be a bug at the
-/// caller level) take the first.
-fn apply_splices(raw: &str, mut splices: Vec<(Range<usize>, String)>) -> String {
+/// Splices are sorted ascending by start (with longer ranges preferred when
+/// starts tie, so an outer enclosing range wins over an inner match). Any
+/// splice whose range overlaps with a previously-emitted one is counted in
+/// the report's `skipped_overlaps` and discarded.
+///
+/// Owns the replacement via `Cow<'_, str>` so callers can borrow a shared
+/// replacement body across many matches without per-match allocation.
+fn apply_splices(raw: &str, mut splices: Vec<(Range<usize>, Cow<'_, str>)>) -> MutationReport {
     if splices.is_empty() {
-        return raw.to_string();
+        return MutationReport {
+            output: raw.to_string(),
+            applied: 0,
+            skipped_overlaps: 0,
+            skipped_self_closing: 0,
+        };
     }
-    splices.sort_by_key(|(range, _)| core::cmp::Reverse(range.start));
-    let mut result = raw.to_string();
+    splices.sort_by(|a, b| {
+        a.0.start
+            .cmp(&b.0.start)
+            .then_with(|| b.0.end.cmp(&a.0.end))
+    });
+    let mut out = String::with_capacity(raw.len());
+    let mut cursor: usize = 0;
+    let mut applied = 0usize;
+    let mut skipped = 0usize;
     for (range, replacement) in splices {
-        result.replace_range(range, &replacement);
+        if range.start < cursor {
+            skipped += 1;
+            continue;
+        }
+        if range.start > raw.len() || range.end > raw.len() || range.start > range.end {
+            skipped += 1;
+            continue;
+        }
+        out.push_str(&raw[cursor..range.start]);
+        out.push_str(&replacement);
+        cursor = range.end;
+        applied += 1;
     }
-    result
+    if cursor < raw.len() {
+        out.push_str(&raw[cursor..]);
+    }
+    MutationReport {
+        output: out,
+        applied,
+        skipped_overlaps: skipped,
+        skipped_self_closing: 0,
+    }
 }

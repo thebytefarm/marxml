@@ -22,7 +22,6 @@ line three
   {
     "attrs": {},
     "children": [],
-    "content": "\nline one\nline two\nline three\n",
     "location": {
       "end": {
         "line": 5,
@@ -34,6 +33,7 @@ line three
       }
     },
     "selfClosing": false,
-    "tag": "snippet"
+    "tag": "snippet",
+    "text": "\nline one\nline two\nline three\n"
   }
 ]

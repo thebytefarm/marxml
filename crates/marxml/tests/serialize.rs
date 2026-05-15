@@ -100,6 +100,17 @@ fn to_xml_pretty_nested_indents_increment() {
 }
 
 #[test]
+fn to_xml_pretty_does_not_indent_mixed_content() {
+    // `<p>a <b/> c</p>` is mixed content. Pretty mode must not inject
+    // indentation in front of the inline child, because that would change
+    // the parent's text stream (`a   <b/> c` instead of `a <b/> c`).
+    let src = "<p>a <b/> c</p>";
+    let doc = parse(src).unwrap();
+    let out = doc.to_xml(&SerializeOpts::pretty());
+    assert_eq!(out, "<p>a <b/> c</p>");
+}
+
+#[test]
 fn to_xml_pretty_preserves_existing_self_close() {
     let src = "<a/>";
     let doc = parse(src).unwrap();
@@ -135,9 +146,58 @@ fn to_json_shapes_simple_element() {
     let el = &array[0];
     assert_eq!(el["tag"], "task");
     assert_eq!(el["attrs"]["id"], "1");
-    assert_eq!(el["content"], "body");
+    assert_eq!(el["text"], "body");
     assert_eq!(el["children"].as_array().unwrap().len(), 0);
     assert_eq!(el["selfClosing"], false);
+}
+
+#[test]
+fn to_json_text_excludes_comments_and_includes_cdata_content() {
+    // Comments disappear; CDATA inner content survives as literal text.
+    let src = "<note>hi<!--ignore-->there<![CDATA[<x/>]]>!</note>";
+    let doc = parse(src).unwrap();
+    let val = doc.to_json();
+    let el = &val.as_array().unwrap()[0];
+    assert_eq!(el["text"], "hithere<x/>!");
+}
+
+#[test]
+fn to_xml_escapes_loose_lt_in_text_body() {
+    // Source has a literal `<` (not followed by a name-start) that the
+    // permissive tokenizer accepts as prose. `to_xml` must escape it on
+    // emission so downstream strict XML parsers can't resync on `</task>`
+    // hidden inside the body.
+    let doc = parse("<task>x < 3</task>").unwrap();
+    let out = doc.to_xml(&SerializeOpts::default());
+    assert!(
+        !out.contains("x < 3"),
+        "body should be escaped, got {out:?}"
+    );
+    assert!(out.contains("&lt;"), "expected &lt; entity, got {out:?}");
+}
+
+#[test]
+fn entity_round_trip_does_not_double_escape() {
+    // `&amp;` in the source must NOT become `&amp;amp;` after round-tripping
+    // through `to_xml` — the tokenizer decodes entities once and the
+    // serializer re-escapes once, producing the original byte form.
+    let src = r#"<task name="A &amp; B"/>"#;
+    let doc = parse(src).unwrap();
+    let out = doc.to_xml(&SerializeOpts::default());
+    assert_eq!(out, src);
+}
+
+#[test]
+fn to_json_text_is_child_stripped() {
+    // The `text` field carries only direct text segments of an element —
+    // child-element markup does not appear in it, so deeply nested documents
+    // do not multiply allocations.
+    let src = r"<task>pre <child/> post</task>";
+    let doc = parse(src).unwrap();
+    let val = doc.to_json();
+    let el = &val.as_array().unwrap()[0];
+    assert_eq!(el["text"], "pre  post");
+    assert_eq!(el["children"].as_array().unwrap().len(), 1);
 }
 
 #[test]

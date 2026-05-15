@@ -69,10 +69,55 @@ pub enum ParseError {
         /// 1-based line of the duplicate.
         line: u32,
     },
+
+    /// Element nesting exceeded the configured maximum depth.
+    ///
+    /// Acts as a guard against pathological inputs (recursive walks could
+    /// otherwise stack-overflow on adversarial documents).
+    #[error("line {line}: <{tag}> exceeds maximum nesting depth of {max}")]
+    MaxDepthExceeded {
+        /// Tag that pushed past the limit.
+        tag: String,
+        /// Configured maximum depth.
+        max: u32,
+        /// 1-based line of the offending opening tag.
+        line: u32,
+    },
+
+    /// Two attributes with the same name appeared on a single element.
+    ///
+    /// XML requires attribute names to be unique per element; lenient parsing
+    /// would yield first/last/middle ambiguity in downstream consumers, so
+    /// duplicates are rejected up front.
+    #[error("line {line}: duplicate attribute {attr} on <{tag}>")]
+    DuplicateAttr {
+        /// Tag carrying the duplicate.
+        tag: String,
+        /// Repeated attribute name.
+        attr: String,
+        /// 1-based line of the duplicate.
+        line: u32,
+    },
+
+    /// Input exceeded the maximum byte length the parser can address.
+    ///
+    /// Source byte offsets are stored as `u32`, so inputs larger than
+    /// `u32::MAX` bytes (4 GiB - 1) cannot have their spans tracked accurately
+    /// and are refused at parse time.
+    #[error("input is {size} bytes — exceeds maximum of {max} bytes")]
+    InputTooLarge {
+        /// Byte length of the offending input.
+        size: u64,
+        /// Configured maximum byte length.
+        max: u64,
+    },
 }
 
 impl ParseError {
     /// 1-based line number where the error was detected.
+    ///
+    /// Returns `0` for [`ParseError::InputTooLarge`] — that variant is raised
+    /// before the input is scanned, so no source position is available.
     #[must_use]
     pub fn line(&self) -> u32 {
         match self {
@@ -81,7 +126,10 @@ impl ParseError {
             | Self::StrayClose { line, .. }
             | Self::MalformedTag { line, .. }
             | Self::MalformedAttribute { line, .. }
-            | Self::DuplicateId { line, .. } => *line,
+            | Self::DuplicateId { line, .. }
+            | Self::MaxDepthExceeded { line, .. }
+            | Self::DuplicateAttr { line, .. } => *line,
+            Self::InputTooLarge { .. } => 0,
         }
     }
 }

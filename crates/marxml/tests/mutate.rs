@@ -239,3 +239,71 @@ fn round_trip_replace_content_remains_parseable() {
     let reparsed = parse(&out).expect("mutated doc must still parse");
     assert_eq!(reparsed.root_count(), 1);
 }
+
+#[test]
+fn try_update_returns_error_on_invalid_attr_name() {
+    let doc = parse("<task/>").unwrap();
+    let sel = Selector::parse("task").unwrap();
+    let err = doc.try_update(&sel, &[("1id", "x")]).unwrap_err();
+    assert!(matches!(err, marxml::MutateError::InvalidAttrName { .. }));
+}
+
+#[test]
+fn try_update_returns_error_on_duplicate_attr_name() {
+    let doc = parse("<task/>").unwrap();
+    let sel = Selector::parse("task").unwrap();
+    let err = doc
+        .try_update(&sel, &[("id", "a"), ("id", "b")])
+        .unwrap_err();
+    assert!(matches!(err, marxml::MutateError::DuplicateAttrName { .. }));
+}
+
+#[test]
+fn try_replace_content_reports_self_closing_skips() {
+    // The selector matches a self-closing tag (no content range), so the
+    // splice is skipped — but the report now surfaces that count instead
+    // of silently zeroing it out.
+    let doc = parse("<task/>").unwrap();
+    let sel = Selector::parse("task").unwrap();
+    let report = doc.try_replace_content(&sel, "X");
+    assert_eq!(report.applied, 0);
+    assert_eq!(report.skipped_self_closing, 1);
+}
+
+#[test]
+fn try_replace_content_reports_overlap_skips() {
+    // Outer and inner `task` are both matched and both have replaceable
+    // bodies; the inner splice overlaps the outer body and is recorded as
+    // skipped.
+    let doc = parse("<task>outer <task>inner</task></task>").unwrap();
+    let sel = Selector::parse("task").unwrap();
+    let report = doc.try_replace_content(&sel, "X");
+    assert_eq!(report.applied, 1);
+    assert_eq!(report.skipped_overlaps, 1);
+}
+
+#[test]
+fn replace_text_escapes_replacement() {
+    let doc = parse("<note>old</note>").unwrap();
+    let sel = Selector::parse("note").unwrap();
+    let out = doc.replace_text(&sel, "<script>");
+    // The injected text is escaped, so reparsing finds no extra children.
+    let reparsed = parse(&out).unwrap();
+    assert_eq!(reparsed.root_count(), 1);
+    let note = reparsed.root_elements().next().unwrap();
+    assert_eq!(note.children().count(), 0);
+    assert_eq!(note.content(), "&lt;script&gt;");
+}
+
+#[test]
+fn replace_in_treats_dollar_as_literal() {
+    // `$1` and `${name}` would, by default, be expanded by the `regex` crate
+    // as capture-group references. The module documents replacements as
+    // verbatim, so the literal `$1` must survive into the output.
+    let src = "<task>price 100</task>";
+    let out = run_replace_in(src, "task", r"(\d+)", "$1 USD");
+    assert!(
+        out.contains("$1 USD"),
+        "replacement `$1 USD` should be literal, got {out:?}"
+    );
+}

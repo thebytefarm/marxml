@@ -14,14 +14,28 @@ fn task_schema() -> Schema {
         .build()
 }
 
+/// Same as [`task_schema`] but without `content_required`, for tests that
+/// focus on attribute or child rules and don't care about text body.
+fn task_schema_no_content() -> Schema {
+    Schema::builder()
+        .tag("task", |t| {
+            t.attr("id", AttrKind::String.required())
+                .attr("status", AttrKind::Enum(vec!["todo".into(), "done".into()]))
+                .child_required("status")
+        })
+        .build()
+}
+
 // ─── Happy path ─────────────────────────────────────────────────────────────
 
 #[test]
 fn fully_compliant_doc_validates() {
-    let src = r#"<task id="1" status="todo"><status>todo</status></task>"#;
+    // `task` requires direct text content as well as a `<status>` child, so
+    // the body carries both.
+    let src = r#"<task id="1" status="todo">buy milk<status>todo</status></task>"#;
     let doc = parse(src).unwrap();
     let report = validate(&doc, &task_schema());
-    assert!(report.is_valid());
+    assert!(report.is_valid(), "got {:?}", report.errors());
     assert!(report.errors().is_empty());
 }
 
@@ -48,10 +62,11 @@ fn missing_required_attr_errors() {
 
 #[test]
 fn missing_optional_attr_is_fine() {
+    // No-content schema variant — this test only cares that the optional
+    // `status` attribute can be absent.
     let src = r#"<task id="1"><status>todo</status></task>"#;
     let doc = parse(src).unwrap();
-    // `status` attr is optional (no .required()).
-    let report = validate(&doc, &task_schema());
+    let report = validate(&doc, &task_schema_no_content());
     assert!(report.is_valid(), "got {:?}", report.errors());
 }
 
@@ -82,6 +97,33 @@ fn regex_constraint_rejects_non_matching_value() {
         e,
         ValidationError::InvalidAttr { reason, .. } if reason.contains("regex")
     )));
+}
+
+#[test]
+fn regex_constraint_is_anchored_full_match() {
+    // `todo|done` must reject `undone` and `done!` — the schema regex is
+    // anchored automatically so partial matches don't slip through.
+    let schema = Schema::builder()
+        .tag("task", |t| {
+            t.attr("status", AttrKind::Regex("todo|done".into()).required())
+        })
+        .build();
+    let bad = parse(r#"<task status="undone"/>"#).unwrap();
+    assert!(!validate(&bad, &schema).is_valid());
+    let ok = parse(r#"<task status="done"/>"#).unwrap();
+    assert!(validate(&ok, &schema).is_valid());
+}
+
+#[test]
+fn duplicate_tag_in_builder_errors() {
+    let result = Schema::builder()
+        .tag("task", |t| t.attr("id", AttrKind::String.required()))
+        .tag("task", |t| t.child_required("status"))
+        .try_build();
+    assert!(matches!(
+        result,
+        Err(marxml::SchemaError::DuplicateTag { .. })
+    ));
 }
 
 #[test]
@@ -156,18 +198,10 @@ fn optional_child_in_exclusive_list_is_allowed() {
 
 #[test]
 fn empty_content_errors_when_required() {
-    let src = r#"<task id="1" status="todo"><status>x</status></task>"#;
+    // Whitespace-only body fails content_required.
+    let src = r#"<task id="1" status="todo">     </task>"#;
     let doc = parse(src).unwrap();
-    // `task` requires content. Element has only child tags + whitespace,
-    // not text content — so it's empty.
-    // Actually our schema accepts children OR text; the check fails only
-    // when both children empty and content blank. Let's prove the negative.
-    let report = validate(&doc, &task_schema());
-    assert!(report.is_valid()); // has a <status> child, so not empty.
-
-    let src2 = r#"<task id="1" status="todo">     </task>"#;
-    let doc2 = parse(src2).unwrap();
-    let errors = validate(&doc2, &task_schema()).errors().to_vec();
+    let errors = validate(&doc, &task_schema()).errors().to_vec();
     assert!(errors
         .iter()
         .any(|e| matches!(e, ValidationError::EmptyContent { .. })));
@@ -175,6 +209,30 @@ fn empty_content_errors_when_required() {
     assert!(errors
         .iter()
         .any(|e| matches!(e, ValidationError::MissingChild { .. })));
+}
+
+#[test]
+fn comment_only_body_fails_content_required() {
+    // `<!-- ... -->` is trivia, not text. content_required must reject it.
+    let src = r#"<task id="1" status="todo"><!--just a note--><status>todo</status></task>"#;
+    let doc = parse(src).unwrap();
+    let errors = validate(&doc, &task_schema()).errors().to_vec();
+    assert!(errors
+        .iter()
+        .any(|e| matches!(e, ValidationError::EmptyContent { .. })));
+}
+
+#[test]
+fn structural_only_body_fails_content_required() {
+    // `content_required` is about *text* content. Child-element markup
+    // alone does not satisfy the rule — `<task>...<status/>...</task>` with
+    // no direct text errors out.
+    let src = r#"<task id="1" status="todo"><status>todo</status></task>"#;
+    let doc = parse(src).unwrap();
+    let errors = validate(&doc, &task_schema()).errors().to_vec();
+    assert!(errors
+        .iter()
+        .any(|e| matches!(e, ValidationError::EmptyContent { .. })));
 }
 
 // ─── Deep validation ────────────────────────────────────────────────────────

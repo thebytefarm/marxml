@@ -17,7 +17,6 @@ input_file: crates/marxml/tests/fixtures/serialize/01-simple.md
       "status": "todo"
     },
     "children": [],
-    "content": "body",
     "location": {
       "end": {
         "line": 1,
@@ -29,6 +28,7 @@ input_file: crates/marxml/tests/fixtures/serialize/01-simple.md
       }
     },
     "selfClosing": false,
-    "tag": "task"
+    "tag": "task",
+    "text": "body"
   }
 ]

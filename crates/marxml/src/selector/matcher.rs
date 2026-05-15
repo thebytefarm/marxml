@@ -4,6 +4,12 @@
 //! it can evaluate descendant/child combinators. Matches are deduplicated by
 //! [`ElementData`] pointer identity so a doc that satisfies multiple compounds
 //! in a union doesn't appear twice.
+//!
+//! Recursion is safe because parsing rejects documents deeper than the
+//! crate-wide `MAX_DEPTH` cap up front; the matcher (and the descendant
+//! combinator's ancestor scan) therefore inherits a `depth ≤ MAX_DEPTH`
+//! bound that prevents stack overflow and keeps the descendant cost linear
+//! in document size.
 
 use std::collections::HashSet;
 
@@ -20,10 +26,15 @@ struct NodeCtx<'a> {
 pub(crate) fn collect_matches<'a>(
     roots: &'a [ElementData],
     raw: &'a str,
+    trivia: &'a [core::ops::Range<usize>],
     sel: &CompiledSelector,
 ) -> Vec<ElementRef<'a>> {
     let mut out: Vec<ElementRef<'a>> = Vec::new();
-    let mut seen: HashSet<usize> = HashSet::new();
+    let mut seen: Option<HashSet<usize>> = if sel.compounds.len() > 1 {
+        Some(HashSet::new())
+    } else {
+        None
+    };
     let mut ancestors: Vec<NodeCtx<'a>> = Vec::new();
     for (i, root) in roots.iter().enumerate() {
         walk(
@@ -32,28 +43,38 @@ pub(crate) fn collect_matches<'a>(
             sel,
             &mut ancestors,
             raw,
+            trivia,
             &mut out,
-            &mut seen,
+            seen.as_mut(),
         );
     }
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk<'a>(
     node: &'a ElementData,
     index: u32,
     sel: &CompiledSelector,
     ancestors: &mut Vec<NodeCtx<'a>>,
     raw: &'a str,
+    trivia: &'a [core::ops::Range<usize>],
     out: &mut Vec<ElementRef<'a>>,
-    seen: &mut HashSet<usize>,
+    mut seen: Option<&mut HashSet<usize>>,
 ) {
     let ctx = NodeCtx { data: node, index };
     for compound in &sel.compounds {
         if compound_matches(&ctx, compound, ancestors) {
-            let key = std::ptr::from_ref(node) as usize;
-            if seen.insert(key) {
-                out.push(ElementRef { data: node, raw });
+            let push = match seen.as_deref_mut() {
+                Some(set) => set.insert(std::ptr::from_ref(node) as usize),
+                None => true,
+            };
+            if push {
+                out.push(ElementRef {
+                    data: node,
+                    raw,
+                    trivia,
+                });
             }
             break;
         }
@@ -66,8 +87,9 @@ fn walk<'a>(
             sel,
             ancestors,
             raw,
+            trivia,
             out,
-            seen,
+            seen.as_deref_mut(),
         );
     }
     ancestors.pop();

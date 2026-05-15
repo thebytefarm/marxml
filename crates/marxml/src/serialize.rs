@@ -11,12 +11,21 @@
 //! source) and [`ElementRef`] (returns the element's outer XML, byte-for-byte
 //! from the source).
 
-use std::fmt::Write as _;
+use serde_json::{json, Map, Value};
 
-use serde_json::{json, Value};
-
-use crate::types::{ElementData, ElementRef};
+use crate::escape::{decode_entities, push_escaped_attr, push_escaped_text};
+use crate::types::{ElementData, ElementRef, TextSegments};
 use crate::Markdown;
+
+/// Walk the element body, producing text segments while skipping child
+/// elements AND the document's trivia (comments + CDATA byte ranges).
+fn text_with_trivia<'a>(
+    raw: &'a str,
+    el: &'a ElementData,
+    trivia: &'a [core::ops::Range<usize>],
+) -> TextSegments<'a> {
+    TextSegments::new_with_trivia(raw, el, trivia)
+}
 
 /// Options for [`Markdown::to_xml`].
 #[derive(Debug, Clone, Default)]
@@ -47,7 +56,7 @@ pub(crate) fn to_xml(doc: &Markdown, opts: &SerializeOpts) -> String {
         if i > 0 && opts.indent.is_some() {
             out.push('\n');
         }
-        emit_element(root, doc.raw(), opts, 0, &mut out);
+        emit_element(root, doc.raw(), doc.trivia(), opts, 0, &mut out);
     }
     out
 }
@@ -56,44 +65,161 @@ pub(crate) fn to_json(doc: &Markdown) -> Value {
     Value::Array(
         doc.roots_internal()
             .iter()
-            .map(|root| element_json(root, doc.raw()))
+            .map(|root| element_json(root, doc.raw(), doc.trivia()))
             .collect(),
     )
 }
 
-fn emit_element(el: &ElementData, raw: &str, opts: &SerializeOpts, depth: usize, out: &mut String) {
+fn emit_element(
+    el: &ElementData,
+    raw: &str,
+    trivia: &[core::ops::Range<usize>],
+    opts: &SerializeOpts,
+    depth: usize,
+    out: &mut String,
+) {
     indent_for(opts, depth, out);
     out.push('<');
     out.push_str(&el.tag);
     for (k, v) in &el.attrs {
-        write!(out, r#" {k}="{v}""#).expect("write to String never fails");
+        out.push(' ');
+        out.push_str(k);
+        out.push_str("=\"");
+        push_escaped_attr(out, v);
+        out.push('"');
     }
-    let body = &raw[el.content_range.clone()];
-    let is_empty = el.children.is_empty() && body.trim().is_empty();
+    let has_text = text_with_trivia(raw, el, trivia).any(|s| !s.trim().is_empty());
+    let is_empty = el.children.is_empty() && !has_text;
     if is_empty && (el.self_closing || opts.self_close_empty) {
         out.push_str("/>");
         return;
     }
     out.push('>');
-    if opts.indent.is_some() && !el.children.is_empty() {
-        // Pretty mode: each child on its own line.
-        for child in &el.children {
-            out.push('\n');
-            emit_element(child, raw, opts, depth + 1, out);
+    if el.children.is_empty() {
+        // Pure text body — escape so output is well-formed XML even when the
+        // source slipped a literal `<` or `&` past the permissive tokenizer.
+        // Goes through `push_escaped_text` so illegal control characters
+        // are also dropped consistently with `crate::escape::escape_text`.
+        for segment in text_with_trivia(raw, el, trivia) {
+            push_escaped_text(out, segment);
         }
-        out.push('\n');
-        indent_for(opts, depth, out);
-    } else if el.children.is_empty() {
-        // Pure text body — copy verbatim.
-        out.push_str(body);
+    } else if opts.indent.is_some() {
+        emit_pretty_children(el, raw, trivia, opts, depth, out);
     } else {
-        // Tight mode with children: emit body verbatim (which already contains
-        // the children's source bytes).
-        out.push_str(body);
+        // Tight mode with children: re-emit children through this same
+        // function (so their attrs/text escape consistently) interleaved
+        // with the parent's direct text segments.
+        emit_tight_children(el, raw, trivia, opts, depth, out);
     }
     out.push_str("</");
     out.push_str(&el.tag);
     out.push('>');
+}
+
+/// Emit tight-mode children: interleave escaped text segments with re-emitted
+/// child elements, instead of copying the parent's raw body. Keeps round-trip
+/// output well-formed even when the tokenizer accepted bytes XML doesn't.
+///
+/// Advances a monotonic `trivia_idx` over the (sorted) trivia slice so the
+/// total cost is linear in `(children + trivia overlapping the body)`
+/// rather than `children × trivia_total`.
+fn emit_tight_children(
+    el: &ElementData,
+    raw: &str,
+    trivia: &[core::ops::Range<usize>],
+    opts: &SerializeOpts,
+    depth: usize,
+    out: &mut String,
+) {
+    let body_start = el.content_range.start;
+    let body_end = el.content_range.end;
+    let mut cursor = body_start;
+    let mut trivia_idx = trivia.partition_point(|r| r.end <= body_start);
+    for child in &el.children {
+        let child_start = usize::try_from(child.span.start.offset).unwrap_or(usize::MAX);
+        let segment_end = child_start.min(body_end);
+        push_escaped_text_skipping_trivia(raw, cursor, segment_end, trivia, &mut trivia_idx, out);
+        emit_element(child, raw, trivia, opts, depth + 1, out);
+        cursor = usize::try_from(child.span.end.offset).unwrap_or(usize::MAX);
+    }
+    if cursor < body_end {
+        push_escaped_text_skipping_trivia(raw, cursor, body_end, trivia, &mut trivia_idx, out);
+    }
+}
+
+/// Append `raw[from..to]` to `out` with XML text escaping, but skip any
+/// byte ranges in `trivia[trivia_idx..]` that overlap the segment. Advances
+/// `trivia_idx` past any range fully consumed.
+fn push_escaped_text_skipping_trivia(
+    raw: &str,
+    from: usize,
+    to: usize,
+    trivia: &[core::ops::Range<usize>],
+    trivia_idx: &mut usize,
+    out: &mut String,
+) {
+    let mut cursor = from;
+    while cursor < to {
+        while *trivia_idx < trivia.len() && trivia[*trivia_idx].end <= cursor {
+            *trivia_idx += 1;
+        }
+        let tr = trivia.get(*trivia_idx);
+        let plain_end = match tr {
+            Some(r) if r.start < to => r.start.max(cursor),
+            _ => to,
+        };
+        if cursor < plain_end {
+            escape_into(&raw[cursor..plain_end], out);
+        }
+        match tr {
+            Some(r) if r.start < to => {
+                cursor = r.end.min(to).max(cursor);
+                if r.end <= to {
+                    *trivia_idx += 1;
+                }
+            }
+            _ => break,
+        }
+    }
+}
+
+#[inline]
+fn escape_into(slice: &str, out: &mut String) {
+    push_escaped_text(out, slice);
+}
+
+/// Emit `<parent>`-wrapped children in pretty mode, interleaving the inner
+/// text segments so mixed content (`<p>a <b>b</b> c</p>`) round-trips with
+/// the `a `/` c` text preserved instead of dropped.
+fn emit_pretty_children(
+    el: &ElementData,
+    raw: &str,
+    trivia: &[core::ops::Range<usize>],
+    opts: &SerializeOpts,
+    depth: usize,
+    out: &mut String,
+) {
+    let has_inline_text = text_with_trivia(raw, el, trivia).any(|s| !s.trim().is_empty());
+    if has_inline_text {
+        // Mixed content: emit text segments (escaped, trivia-skipped)
+        // interleaved with re-emitted children. Disable indent for the
+        // sub-tree so children don't have indentation injected into the
+        // parent's text stream (`<p>a <b/> c</p>` must not become
+        // `<p>a   <b/> c</p>`).
+        let tight = SerializeOpts {
+            indent: None,
+            self_close_empty: opts.self_close_empty,
+        };
+        emit_tight_children(el, raw, trivia, &tight, depth, out);
+        return;
+    }
+    // Pure-structure children: emit each on its own indented line.
+    for child in &el.children {
+        out.push('\n');
+        emit_element(child, raw, trivia, opts, depth + 1, out);
+    }
+    out.push('\n');
+    indent_for(opts, depth, out);
 }
 
 fn indent_for(opts: &SerializeOpts, depth: usize, out: &mut String) {
@@ -104,17 +230,31 @@ fn indent_for(opts: &SerializeOpts, depth: usize, out: &mut String) {
     }
 }
 
-fn element_json(el: &ElementData, raw: &str) -> Value {
-    let attrs: serde_json::Map<String, Value> = el
+fn element_json(el: &ElementData, raw: &str, trivia: &[core::ops::Range<usize>]) -> Value {
+    let attrs: Map<String, Value> = el
         .attrs
         .iter()
         .map(|(k, v)| (k.clone(), Value::String(v.clone())))
         .collect();
-    let children: Vec<Value> = el.children.iter().map(|c| element_json(c, raw)).collect();
+    let children: Vec<Value> = el
+        .children
+        .iter()
+        .map(|c| element_json(c, raw, trivia))
+        .collect();
+    // `text` is the direct, child-stripped text of this element joined into a
+    // single string. It does not recurse into descendants, so nesting depth
+    // doesn't multiply allocations. Comment/CDATA byte ranges (trivia) are
+    // also skipped so the consumer sees only user-authored text. Entity
+    // references are decoded so the consumer sees literal characters; on
+    // serialization back out they will be re-escaped.
+    let mut text = String::new();
+    for segment in text_with_trivia(raw, el, trivia) {
+        text.push_str(&decode_entities(segment));
+    }
     json!({
         "tag": el.tag.clone(),
         "attrs": Value::Object(attrs),
-        "content": raw[el.content_range.clone()].to_string(),
+        "text": text,
         "children": Value::Array(children),
         "selfClosing": el.self_closing,
         "location": {

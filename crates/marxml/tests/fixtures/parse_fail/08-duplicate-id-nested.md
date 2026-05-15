@@ -1,3 +1,4 @@
-<task id="x">
+<group>
   <task id="x"/>
-</task>
+  <task id="x"/>
+</group>

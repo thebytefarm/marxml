@@ -3,4 +3,4 @@ source: crates/marxml/tests/fixture_suite.rs
 expression: "format!(\"{}: {}\", error_kind(&err), err)"
 input_file: crates/marxml/tests/fixtures/parse_fail/08-duplicate-id-nested.md
 ---
-DuplicateId: line 1: duplicate id="x" on <task>
+DuplicateId: line 3: duplicate id="x" on <task>

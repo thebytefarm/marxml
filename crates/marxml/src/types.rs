@@ -48,12 +48,16 @@ pub(crate) struct ElementData {
 /// A cheap reference to a parsed element, borrowing from the owning
 /// [`Markdown`](crate::Markdown) document.
 ///
-/// Cloning is free (it's two pointers). Methods return references into the
-/// original document where possible.
+/// Cloning is free (it's a small handful of pointers). Methods return
+/// references into the original document where possible.
 #[derive(Debug, Clone, Copy)]
 pub struct ElementRef<'a> {
     pub(crate) data: &'a ElementData,
     pub(crate) raw: &'a str,
+    /// Trivia (comments + CDATA) byte ranges from the owning document, in
+    /// ascending source order. Threaded onto every `ElementRef` so `text()`
+    /// can exclude trivia bytes even without going back to the `Markdown`.
+    pub(crate) trivia: &'a [core::ops::Range<usize>],
 }
 
 impl<'a> ElementRef<'a> {
@@ -91,13 +95,23 @@ impl<'a> ElementRef<'a> {
         &self.raw[self.data.content_range.clone()]
     }
 
+    /// Byte range of the inner content within the document's raw string.
+    ///
+    /// Crate-internal so mutation can splice content without recomputing
+    /// the offsets from element-span arithmetic.
+    pub(crate) fn content_range(&self) -> core::ops::Range<usize> {
+        self.data.content_range.clone()
+    }
+
     /// Iterate the element's direct children.
     pub fn children(&self) -> impl Iterator<Item = ElementRef<'a>> + 'a {
         let raw = self.raw;
-        self.data
-            .children
-            .iter()
-            .map(move |child| ElementRef { data: child, raw })
+        let trivia = self.trivia;
+        self.data.children.iter().map(move |child| ElementRef {
+            data: child,
+            raw,
+            trivia,
+        })
     }
 
     /// Source span covering the full element (opening tag through closing tag,
@@ -118,10 +132,12 @@ impl<'a> ElementRef<'a> {
     ///
     /// Returns matches within the element's descendants, in source order.
     pub fn select(&self, sel: &crate::Selector) -> impl Iterator<Item = ElementRef<'a>> + 'a {
-        crate::selector::select(&self.data.children, self.raw, sel).into_iter()
+        crate::selector::select(&self.data.children, self.raw, self.trivia, sel).into_iter()
     }
 
-    /// Inner text segments, in source order, with child element markup stripped.
+    /// Inner text segments, in source order, with child element markup
+    /// stripped. Comment / CDATA bytes are also excluded — `text()` reflects
+    /// the user-authored content, not the document's raw bytes.
     ///
     /// For `<task>do <em>thing</em> now</task>`, this yields `"do "`,
     /// `" now"` (the text between child element open tags, plus the
@@ -129,26 +145,47 @@ impl<'a> ElementRef<'a> {
     ///
     /// Returns an empty iterator for self-closing tags.
     pub fn text(&self) -> impl Iterator<Item = &'a str> + 'a {
-        TextSegments::new(self.raw, self.data)
+        TextSegments::new_with_trivia(self.raw, self.data, self.trivia)
     }
 }
 
 /// Iterator over `ElementRef::text()` — the segments of raw text inside an
-/// element, with child element markup omitted.
+/// element, with child element markup omitted. Trivia byte ranges
+/// (comments + CDATA produced by the parser) are also skipped so callers
+/// never see comment markers as content.
+///
+/// The `trivia` slice is a sorted, non-overlapping list shared across the
+/// whole document; the iterator advances a monotonic index into it so
+/// iteration over text segments stays linear in `(children + trivia)`
+/// rather than `children × trivia`.
 pub struct TextSegments<'a> {
     raw: &'a str,
     cursor: usize,
     end: usize,
     children: core::slice::Iter<'a, ElementData>,
+    trivia: &'a [core::ops::Range<usize>],
+    /// Index of the next trivia range that might still overlap `cursor..end`.
+    /// Trivia is sorted ascending, so this is monotonically non-decreasing.
+    trivia_idx: usize,
 }
 
 impl<'a> TextSegments<'a> {
-    fn new(raw: &'a str, data: &'a ElementData) -> Self {
+    pub(crate) fn new_with_trivia(
+        raw: &'a str,
+        data: &'a ElementData,
+        trivia: &'a [core::ops::Range<usize>],
+    ) -> Self {
+        // Skip past any trivia that ends before this element's body — they
+        // can never overlap, so we don't want to look at them again.
+        let start = data.content_range.start;
+        let trivia_idx = trivia.partition_point(|r| r.end <= start);
         Self {
             raw,
-            cursor: data.content_range.start,
+            cursor: start,
             end: data.content_range.end,
             children: data.children.iter(),
+            trivia,
+            trivia_idx,
         }
     }
 }
@@ -158,23 +195,58 @@ impl<'a> Iterator for TextSegments<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(child) = self.children.next() {
-                let next_start = usize::try_from(child.span.start.offset).unwrap_or(usize::MAX);
-                let segment = &self.raw[self.cursor..next_start];
-                self.cursor = usize::try_from(child.span.end.offset).unwrap_or(usize::MAX);
-                if !segment.is_empty() {
+            // Next child span (peeked, not consumed).
+            let child_next = self.children.clone().next().map(|c| {
+                let s = usize::try_from(c.span.start.offset).unwrap_or(usize::MAX);
+                let e = usize::try_from(c.span.end.offset).unwrap_or(usize::MAX);
+                s..e
+            });
+            // Next trivia range that might still overlap the remaining body.
+            // The index is monotonically non-decreasing across calls, so the
+            // total work is O(children + relevant trivia), not their product.
+            while self.trivia_idx < self.trivia.len()
+                && self.trivia[self.trivia_idx].end <= self.cursor
+            {
+                self.trivia_idx += 1;
+            }
+            let trivia_next = self.trivia.get(self.trivia_idx).and_then(|r| {
+                if r.start >= self.end {
+                    None
+                } else {
+                    Some(r.clone())
+                }
+            });
+
+            let pick = match (child_next, trivia_next) {
+                (Some(c), Some(t)) if c.start <= t.start => {
+                    self.children.next();
+                    Some(c)
+                }
+                (Some(c), None) => {
+                    self.children.next();
+                    Some(c)
+                }
+                (_, Some(t)) => {
+                    self.trivia_idx += 1;
+                    Some(t)
+                }
+                (None, None) => None,
+            };
+
+            let Some(span) = pick else {
+                if self.cursor < self.end {
+                    let segment = &self.raw[self.cursor..self.end];
+                    self.cursor = self.end;
                     return Some(segment);
                 }
-                continue;
-            }
-            // No more children. Yield remaining tail text, if any. By
-            // construction, `cursor < end` here means the slice is non-empty.
-            if self.cursor < self.end {
-                let segment = &self.raw[self.cursor..self.end];
-                self.cursor = self.end;
+                return None;
+            };
+            let seg_end = span.start.min(self.end).max(self.cursor);
+            let segment = &self.raw[self.cursor..seg_end];
+            self.cursor = span.end.max(self.cursor).min(self.end);
+            if !segment.is_empty() {
                 return Some(segment);
             }
-            return None;
         }
     }
 }
