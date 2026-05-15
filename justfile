@@ -27,9 +27,13 @@ test:
 test-thorough:
     PROPTEST_CASES=10000 cargo test --all-features --workspace
 
-# Run benchmarks
+# Run benchmarks (criterion locally; CodSpeed wraps this in CI)
 bench:
     cargo bench --workspace
+
+# Verify version sync (crate vs npm)
+versions:
+    ./scripts/check-versions.sh
 
 # Generate coverage report (HTML in target/llvm-cov/html)
 cov:
