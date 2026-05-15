@@ -17,9 +17,9 @@ jobs:
   bench:
     name: CodSpeed
     runs-on: ubuntu-latest
-    # Until CODSPEED_TOKEN is set, the upload step 401s — don't gate merges
-    # on that. Once the token lands, drop this line.
-    continue-on-error: true
+    # Skip when the token isn't configured (e.g. on forks). Once
+    # CODSPEED_TOKEN is set in repo settings, this job runs automatically.
+    if: ${{ vars.CODSPEED_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
