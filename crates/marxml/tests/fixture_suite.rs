@@ -205,6 +205,7 @@ fn error_kind(e: &ParseError) -> &'static str {
         ParseError::MaxDepthExceeded { .. } => "MaxDepthExceeded",
         ParseError::DuplicateAttr { .. } => "DuplicateAttr",
         ParseError::InputTooLarge { .. } => "InputTooLarge",
+        _ => "Unknown",
     }
 }
 

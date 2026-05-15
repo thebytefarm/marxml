@@ -349,42 +349,42 @@ fn unterminated_close_tag_errors() {
 #[test]
 fn parse_error_line_accessor_unclosed() {
     let err = parse("line one\nline two\n<task>").unwrap_err();
-    assert_eq!(err.line(), 3);
+    assert_eq!(err.line(), Some(3));
 }
 
 #[test]
 fn parse_error_line_accessor_mismatched_close() {
     let err = parse("\n<a><b></a></b>").unwrap_err();
     assert!(matches!(err, ParseError::MismatchedClose { .. }));
-    assert_eq!(err.line(), 2);
+    assert_eq!(err.line(), Some(2));
 }
 
 #[test]
 fn parse_error_line_accessor_stray_close() {
     let err = parse("\n</nope>").unwrap_err();
     assert!(matches!(err, ParseError::StrayClose { .. }));
-    assert_eq!(err.line(), 2);
+    assert_eq!(err.line(), Some(2));
 }
 
 #[test]
 fn parse_error_line_accessor_malformed_tag() {
     let err = parse("\n<task").unwrap_err();
     assert!(matches!(err, ParseError::MalformedTag { .. }));
-    assert_eq!(err.line(), 2);
+    assert_eq!(err.line(), Some(2));
 }
 
 #[test]
 fn parse_error_line_accessor_malformed_attribute() {
     let err = parse("\n<task id=>").unwrap_err();
     assert!(matches!(err, ParseError::MalformedAttribute { .. }));
-    assert_eq!(err.line(), 2);
+    assert_eq!(err.line(), Some(2));
 }
 
 #[test]
 fn parse_error_line_accessor_duplicate_id() {
     let err = parse("\n<task id=\"x\"/>\n<task id=\"x\"/>").unwrap_err();
     assert!(matches!(err, ParseError::DuplicateId { .. }));
-    assert_eq!(err.line(), 3);
+    assert_eq!(err.line(), Some(3));
 }
 
 #[test]

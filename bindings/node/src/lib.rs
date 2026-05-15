@@ -287,6 +287,9 @@ fn error_kind(e: &marxml::ValidationError) -> &'static str {
         marxml::ValidationError::MissingChild { .. } => "missing_child",
         marxml::ValidationError::UnexpectedChild { .. } => "unexpected_child",
         marxml::ValidationError::EmptyContent { .. } => "empty_content",
+        // `ValidationError` is `#[non_exhaustive]`; future variants surface
+        // with a generic kind until the bindings catch up.
+        _ => "unknown",
     }
 }
 
@@ -297,6 +300,7 @@ fn error_tag(e: &marxml::ValidationError) -> String {
         | marxml::ValidationError::MissingChild { tag, .. }
         | marxml::ValidationError::UnexpectedChild { tag, .. }
         | marxml::ValidationError::EmptyContent { tag, .. } => tag.clone(),
+        _ => String::new(),
     }
 }
 
@@ -307,5 +311,6 @@ fn error_line(e: &marxml::ValidationError) -> u32 {
         | marxml::ValidationError::MissingChild { line, .. }
         | marxml::ValidationError::UnexpectedChild { line, .. }
         | marxml::ValidationError::EmptyContent { line, .. } => *line,
+        _ => 0,
     }
 }

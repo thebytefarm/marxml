@@ -51,9 +51,12 @@ impl Schema {
 }
 
 /// Per-tag validation rules — author-facing builder form. The schema is
-/// compiled into a private [`CompiledTagSchema`] on [`SchemaBuilder::build`].
+/// compiled into a private `CompiledTagSchema` on [`SchemaBuilder::build`].
+///
+/// Constructed only via [`SchemaBuilder::tag`] and the closure-based
+/// [`TagBuilder`] API; this struct has no public constructor of its own.
 #[derive(Debug, Clone, Default)]
-pub struct TagSchema {
+pub(crate) struct TagSchema {
     pub(crate) attrs: BTreeMap<String, AttrConstraint>,
     pub(crate) children_required: Vec<String>,
     pub(crate) children_optional: Vec<String>,
@@ -100,7 +103,7 @@ impl AttrKind {
     }
 }
 
-/// A single attribute slot in a [`TagSchema`].
+/// A single attribute slot built by [`TagBuilder::attr`].
 #[derive(Debug, Clone)]
 pub struct AttrConstraint {
     pub(crate) kind: AttrKind,
@@ -148,6 +151,7 @@ pub(crate) enum CompiledAttrKind {
 
 /// Reasons [`SchemaBuilder::try_build`] can reject a schema.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SchemaError {
     /// An `AttrKind::Regex(...)` pattern failed to compile.
     #[error("invalid regex for {tag}.{attr}: {reason}")]
@@ -194,6 +198,7 @@ pub enum SchemaError {
 }
 
 /// Builder for [`Schema`].
+#[derive(Debug, Clone, Default)]
 pub struct SchemaBuilder {
     tags: BTreeMap<String, TagSchema>,
     /// Names registered more than once. Surfaces at `try_build` so silent
@@ -209,13 +214,17 @@ impl SchemaBuilder {
     /// registration replaces the first internally but causes `try_build` to
     /// return [`SchemaError::DuplicateTag`].
     #[must_use]
-    pub fn tag<F: FnOnce(TagBuilder) -> TagBuilder>(mut self, name: &str, f: F) -> Self {
+    pub fn tag<F>(mut self, name: impl Into<String>, f: F) -> Self
+    where
+        F: FnOnce(TagBuilder) -> TagBuilder,
+    {
+        let name = name.into();
         let builder = TagBuilder {
             schema: TagSchema::default(),
         };
         let tag_schema = f(builder).schema;
-        if self.tags.insert(name.to_string(), tag_schema).is_some() {
-            self.duplicates.push(name.to_string());
+        if self.tags.insert(name.clone(), tag_schema).is_some() {
+            self.duplicates.push(name);
         }
         self
     }
@@ -338,6 +347,7 @@ fn compile_tag(tag: &str, ts: TagSchema) -> Result<CompiledTagSchema, SchemaErro
 }
 
 /// Builder for a single tag's rules within a [`Schema`].
+#[derive(Debug, Clone, Default)]
 pub struct TagBuilder {
     schema: TagSchema,
 }
@@ -346,29 +356,30 @@ impl TagBuilder {
     /// Add an attribute constraint. Registering the same attribute name
     /// twice on a tag is a build error (see [`SchemaError::DuplicateAttr`]).
     #[must_use]
-    pub fn attr(mut self, name: &str, constraint: impl Into<AttrConstraint>) -> Self {
+    pub fn attr(mut self, name: impl Into<String>, constraint: impl Into<AttrConstraint>) -> Self {
+        let name = name.into();
         if self
             .schema
             .attrs
-            .insert(name.to_string(), constraint.into())
+            .insert(name.clone(), constraint.into())
             .is_some()
         {
-            self.schema.duplicate_attrs.push(name.to_string());
+            self.schema.duplicate_attrs.push(name);
         }
         self
     }
 
     /// Mark a child tag as required (must appear at least once).
     #[must_use]
-    pub fn child_required(mut self, name: &str) -> Self {
-        self.schema.children_required.push(name.to_string());
+    pub fn child_required(mut self, name: impl Into<String>) -> Self {
+        self.schema.children_required.push(name.into());
         self
     }
 
     /// Add a child tag to the allowlist without requiring it.
     #[must_use]
-    pub fn child_optional(mut self, name: &str) -> Self {
-        self.schema.children_optional.push(name.to_string());
+    pub fn child_optional(mut self, name: impl Into<String>) -> Self {
+        self.schema.children_optional.push(name.into());
         self
     }
 

@@ -8,7 +8,7 @@
 //! matches both a parent and one of its descendants, the parent splice
 //! encloses the child's range; the outer splice wins and the inner splice is
 //! discarded so the document doesn't end up with mutually-inconsistent edits
-//! at overlapping byte ranges. The fallible variants ([`try_update`],
+//! at overlapping byte ranges. The fallible variants ([`crate::Markdown::try_update`],
 //! [`try_replace_content`], [`try_replace_in`]) surface the discarded count
 //! in the returned [`MutationReport`] so callers can distinguish "no match"
 //! from "match shadowed by an outer match".
@@ -26,9 +26,9 @@
 //! `update`, by contrast, owns the surrounding attribute syntax, so it
 //! validates attribute names against [`crate::is_valid_name`] and
 //! XML-escapes attribute values before writing them. The infallible
-//! [`update`] returns the source unchanged on programmer error (invalid
-//! name / duplicate key) for ergonomics; [`try_update`] returns the
-//! offending input as a [`MutateError`] instead.
+//! [`update`] panics on programmer error (invalid name / duplicate key) so
+//! that bugs surface loudly; [`crate::Markdown::try_update`] returns the
+//! offending input as a [`MutateError`] for runtime-sourced inputs.
 
 use core::ops::Range;
 use std::borrow::Cow;
@@ -44,14 +44,15 @@ use crate::Markdown;
 
 /// Errors returned by the fallible mutation variants.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MutateError {
-    /// An attribute name passed to [`try_update`] is not a valid XML name.
+    /// An attribute name passed to [`crate::Markdown::try_update`] is not a valid XML name.
     #[error("invalid XML attribute name {name:?}")]
     InvalidAttrName {
         /// The offending name.
         name: String,
     },
-    /// The attribute slice passed to [`try_update`] repeats the same name.
+    /// The attribute slice passed to [`crate::Markdown::try_update`] repeats the same name.
     #[error("duplicate attribute name {name:?} in update slice")]
     DuplicateAttrName {
         /// The repeated name.
@@ -61,7 +62,8 @@ pub enum MutateError {
 
 /// Outcome of a successful mutation. Reports both the rewritten document
 /// and any accounting useful for diagnostics.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct MutationReport {
     /// Rewritten document. The original [`Markdown`] is unchanged.
     pub output: String,
@@ -79,13 +81,14 @@ pub struct MutationReport {
 // ─── infallible entry points (public re-exports via Markdown) ─────────────
 
 pub(crate) fn update(doc: &Markdown, sel: &Selector, new_attrs: &[(&str, &str)]) -> String {
-    match try_update(doc, sel, new_attrs) {
-        Ok(r) => r.output,
-        Err(e) => {
-            debug_assert!(false, "update() programmer error: {e}");
-            doc.raw().to_string()
-        }
-    }
+    // Programmer error (invalid attribute name or duplicate key in
+    // `new_attrs`) panics consistently in both debug and release builds.
+    // Callers that need to recover from bad input should use
+    // [`Markdown::try_update`] instead, which returns the offending value as
+    // a [`MutateError`].
+    try_update(doc, sel, new_attrs)
+        .unwrap_or_else(|e| panic!("update() called with invalid attrs: {e}"))
+        .output
 }
 
 pub(crate) fn replace_content(doc: &Markdown, sel: &Selector, new_body: &str) -> String {

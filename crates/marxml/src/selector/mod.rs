@@ -48,6 +48,16 @@ impl Selector {
     }
 }
 
+impl std::str::FromStr for Selector {
+    type Err = SelectorError;
+
+    /// Equivalent to [`Selector::parse`]. Lets callers use the standard
+    /// `"selector-string".parse::<Selector>()` form.
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        Self::parse(input)
+    }
+}
+
 pub(crate) fn select<'a>(
     roots: &'a [ElementData],
     raw: &'a str,

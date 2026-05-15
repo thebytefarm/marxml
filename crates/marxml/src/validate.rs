@@ -12,6 +12,7 @@ use crate::Markdown;
 /// One problem found during validation. Every variant carries a 1-based
 /// `line` number and the offending `tag` for diagnostic output.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ValidationError {
     /// A schema-required attribute was missing on a matched element.
     #[error("line {line}: <{tag}> missing required attribute {attr}")]
@@ -71,7 +72,8 @@ pub enum ValidationError {
 }
 
 /// Outcome of [`validate`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ValidationReport {
     errors: Vec<ValidationError>,
 }

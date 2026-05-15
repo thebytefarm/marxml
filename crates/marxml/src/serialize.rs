@@ -28,7 +28,8 @@ fn text_with_trivia<'a>(
 }
 
 /// Options for [`Markdown::to_xml`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SerializeOpts {
     /// Indentation string. When set, child elements are nested on their own
     /// lines with this prefix per level. `None` yields tight, single-line output.
@@ -47,6 +48,22 @@ impl SerializeOpts {
             indent: Some("  ".to_string()),
             self_close_empty: true,
         }
+    }
+
+    /// Set the indentation prefix. `None` keeps output tight (single-line);
+    /// `Some(s)` indents each nested child by one copy of `s` per level.
+    #[must_use]
+    pub fn with_indent(mut self, indent: Option<String>) -> Self {
+        self.indent = indent;
+        self
+    }
+
+    /// Toggle whether empty elements collapse to `<tag/>` (`true`) or stay
+    /// as `<tag></tag>` unless the source already used self-close form.
+    #[must_use]
+    pub fn with_self_close_empty(mut self, on: bool) -> Self {
+        self.self_close_empty = on;
+        self
     }
 }
 

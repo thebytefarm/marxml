@@ -29,11 +29,11 @@ pub use document::Markdown;
 pub use error::ParseError;
 pub use escape::{escape_attr, escape_text, is_valid_name};
 pub use mutate::{MutateError, MutationReport};
-pub use parse::{parse, parse_fragment};
+pub use parse::{parse, parse_fragment, MAX_DEPTH, MAX_INPUT_BYTES};
 pub use schema::{Schema, SchemaError};
 pub use selector::{Selector, SelectorError};
 pub use serialize::SerializeOpts;
-pub use types::{ElementRef, SourcePosition, SourceSpan, TextSegments};
+pub use types::{ElementRef, SourcePosition, SourceSpan};
 pub use validate::{validate, ValidationError, ValidationReport};
 
 /// Crate version exposed for downstream diagnostics.
