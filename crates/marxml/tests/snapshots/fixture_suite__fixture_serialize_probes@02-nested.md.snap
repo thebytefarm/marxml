@@ -1,0 +1,77 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/serialize/02-nested.md
+---
+--- to_xml(default) ---
+<phase id="1">
+  <task id="1.1"><status>todo</status></task>
+</phase>
+
+--- to_xml(pretty) ---
+<phase id="1">
+  <task id="1.1">
+    <status>todo</status>
+  </task>
+</phase>
+
+--- to_json ---
+[
+  {
+    "attrs": {
+      "id": "1"
+    },
+    "children": [
+      {
+        "attrs": {
+          "id": "1.1"
+        },
+        "children": [
+          {
+            "attrs": {},
+            "children": [],
+            "content": "todo",
+            "location": {
+              "end": {
+                "line": 2,
+                "offset": 53
+              },
+              "start": {
+                "line": 2,
+                "offset": 32
+              }
+            },
+            "selfClosing": false,
+            "tag": "status"
+          }
+        ],
+        "content": "<status>todo</status>",
+        "location": {
+          "end": {
+            "line": 2,
+            "offset": 60
+          },
+          "start": {
+            "line": 2,
+            "offset": 17
+          }
+        },
+        "selfClosing": false,
+        "tag": "task"
+      }
+    ],
+    "content": "\n  <task id=\"1.1\"><status>todo</status></task>\n",
+    "location": {
+      "end": {
+        "line": 3,
+        "offset": 69
+      },
+      "start": {
+        "line": 1,
+        "offset": 0
+      }
+    },
+    "selfClosing": false,
+    "tag": "phase"
+  }
+]

@@ -1,0 +1,14 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/select/03-realistic-plan.md
+---
+task -> [task#1.1, task#1.2, task#2.1, task#2.2, task#2.3]
+phase -> [phase#1, phase#2]
+* -> [phase#1, task#1.1, status, task#1.2, status, phase#2, task#2.1, status, task#2.2, status, task#2.3, status]
+task[status="todo"] -> [task#2.1, task#2.2]
+task[id^="1."] -> [task#1.1, task#1.2]
+phase task -> [task#1.1, task#1.2, task#2.1, task#2.2, task#2.3]
+phase > task -> [task#1.1, task#1.2, task#2.1, task#2.2, task#2.3]
+*:first-child -> [phase#1, task#1.1, status, status, task#2.1, status, status, status]
+*:not([id]) -> [status, status, status, status, status]

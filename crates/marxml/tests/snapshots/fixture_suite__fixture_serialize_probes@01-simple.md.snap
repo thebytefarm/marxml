@@ -1,0 +1,34 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/serialize/01-simple.md
+---
+--- to_xml(default) ---
+<task id="1" status="todo">body</task>
+
+--- to_xml(pretty) ---
+<task id="1" status="todo">body</task>
+
+--- to_json ---
+[
+  {
+    "attrs": {
+      "id": "1",
+      "status": "todo"
+    },
+    "children": [],
+    "content": "body",
+    "location": {
+      "end": {
+        "line": 1,
+        "offset": 38
+      },
+      "start": {
+        "line": 1,
+        "offset": 0
+      }
+    },
+    "selfClosing": false,
+    "tag": "task"
+  }
+]

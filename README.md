@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/thebytefarm/marxml/main/.github/assets/banner.png" alt="marxml" width="100%" />
-  <p><strong>Fast markdown + XML query and mutation. Rust core, Node bindings. Fully typed.</strong></p>
+  <p><strong>Fast markdown + XML query and mutation. Rust core, Node bindings.</strong></p>
 
 <a href="https://github.com/thebytefarm/marxml/actions/workflows/ci.yml"><img src="https://github.com/thebytefarm/marxml/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
 <a href="https://crates.io/crates/marxml"><img src="https://img.shields.io/crates/v/marxml" alt="crates.io" /></a>
@@ -10,26 +9,21 @@
 </div>
 
 > [!WARNING]
-> **Pre-release · under active development.** `marxml` is in the `0.0.x` placeholder phase — the names on crates.io and npm are reserved, but the working API lands in `0.1.0`. APIs, types, and CLI surface will change without notice until then. Don't depend on it in production yet.
+> **Pre-release · under active development.** `marxml` is in the `0.0.x` placeholder phase — the names on crates.io and npm are reserved, but the working API lands in `0.1.0`. APIs, types, and selector grammar will change without notice until then. Don't depend on it in production yet.
+
+`marxml` parses markdown documents that embed XML-shaped tags and gives you a typed handle for querying, mutating, and serializing them. Built in Rust, distributed as both a [crates.io](https://crates.io/crates/marxml) crate and an [npm package](https://www.npmjs.com/package/marxml) with prebuilt native bindings via [napi-rs](https://napi.rs/).
+
+The Rust API mirrors [`scraper`](https://github.com/rust-scraper/scraper) — the de facto CSS-selector HTML library — adapted for markdown+XML. The Node API mirrors the same shape with JS-idiomatic ergonomics.
 
 ## Features
 
-- One pass, two trees: parse markdown once, get both the markdown AST and the embedded XML nodes addressable from the same handle.
-- Query like a document: `find`, `first`, attribute filters, and CSS-ish selectors over the XML tags inside your markdown.
-- Mutate without rewriting: in-place attribute and content edits, then `toString()` re-emits the original markdown around your changes.
-- Rust core: zero-copy where it can, single allocation where it can't. Built on `pulldown-cmark` and a tuned XML tokenizer.
-- Node-native: prebuilt `.node` binaries via [napi-rs](https://napi.rs/). No `node-gyp`, no postinstall compile.
-- Dual-distributed: same engine, shipped as a [Rust crate](https://crates.io/crates/marxml) and a [Node package](https://www.npmjs.com/package/marxml).
+- **One pass, structured tree.** Hand-rolled state-machine tokenizer + stack-based assembler. No regex parsing — same-tag nesting works out of the box.
+- **CSS-subset selectors.** `task[id^="4."]`, `phase > task`, `*:nth-child(2)`, `:not(simple)`. Compiled once, reused across documents.
+- **Surgical mutation.** Three string-returning helpers — `update`, `replace_content`, `replace_in`. Untouched bytes are preserved verbatim.
+- **Validation.** Declarative schema with required/optional attributes, enum/regex constraints, required children, exclusive allowlists.
+- **Native everywhere.** Prebuilt `.node` binaries for macOS (arm64, x64), Linux (x64-gnu, x64-musl, arm64-gnu), and Windows (x64-msvc).
 
 ## Install
-
-### Node / TypeScript
-
-```sh
-pnpm add marxml
-```
-
-Ships prebuilt binaries for macOS (arm64, x64), Linux (x64-gnu, x64-musl, arm64-gnu), and Windows (x64-msvc).
 
 ### Rust
 
@@ -37,63 +31,101 @@ Ships prebuilt binaries for macOS (arm64, x64), Linux (x64-gnu, x64-musl, arm64-
 cargo add marxml
 ```
 
-## Usage
+### Node / TypeScript
 
-> The snippets below sketch the planned `0.1.0` surface. Treat as design intent until the real release lands.
-
-### TypeScript
-
-```ts
-import { Document } from 'marxml'
-
-const doc = Document.parse(source)
-
-// query
-const callouts = doc.find('callout')
-const frontmatter = doc.first('frontmatter')
-
-// mutate
-for (const todo of doc.find('todo')) {
-  todo.setAttr('done', 'true')
-}
-
-// serialize back to markdown
-const output = doc.toString()
+```sh
+pnpm add marxml
 ```
 
-### Rust
+## Rust quickstart
 
 ```rust
-use marxml::Document;
+use marxml::{parse, Selector};
 
-let mut doc = Document::parse(source)?;
+let src = r#"
+<phase id="1" status="todo">
+  <task id="1.1"><status>todo</status></task>
+  <task id="1.2"><status>done</status></task>
+</phase>
+"#;
 
-for node in doc.find_mut("todo") {
-    node.set_attr("done", "true");
+let doc = parse(src)?;
+let sel = Selector::parse(r#"task[status="todo"]"#)?;
+
+for task in doc.select(&sel) {
+    println!("{}", task.attr("id").unwrap_or(""));
 }
 
-let output = doc.to_string();
+let updated = doc.update(&sel, &[("status", "done")]);
+println!("{updated}");
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-## Why
+## Node quickstart
 
-Markdown is a great storage format for human-editable structured state — but parsing the embedded XML tags out reliably is fiddly, and doing it fast at scale (thousands of files, repeated parses) starts to bite. `marxml` exists to make that one job fast and ergonomic from either language.
+```ts
+import {
+  parse,
+  select,
+  updateAttrs,
+  replaceContent,
+  replaceInContent,
+  toXml,
+  toJson,
+  validateSchema,
+} from 'marxml'
 
-Use cases:
+const src = `<task id="1" status="todo">do thing</task>`
 
-- LLM tool output (XML-tagged blocks inside markdown responses)
-- Static-site / docs generators with structured callouts
-- Agent state machines stored as markdown
-- Anywhere markdown-as-data meets a hot path
+const doc = parse(src)
+// { raw: '<task id="1" status="todo">do thing</task>',
+//   elements: [{ tag: 'task', attrs: { id: '1', status: 'todo' }, ... }] }
 
-## Project layout
+const tasks = select(src, 'task[status="todo"]')
+const updated = updateAttrs(src, 'task', [{ name: 'status', value: 'done' }])
+```
+
+## Selector cheat sheet
+
+| Pattern              | Meaning                              | Example                |
+| -------------------- | ------------------------------------ | ---------------------- |
+| `tag`                | tag name                             | `task`                 |
+| `*`                  | any element                          | `*`                    |
+| `[attr]`             | has attribute                        | `task[id]`             |
+| `[attr="val"]`       | attribute equals                     | `task[id="4.1"]`       |
+| `[attr^="x"]`        | attribute starts-with                | `task[id^="4."]`       |
+| `[attr$="x"]`        | attribute ends-with                  | `task[id$=".final"]`   |
+| `[attr*="x"]`        | attribute contains                   | `task[id*="."]`        |
+| `a, b`               | union                                | `task, phase`          |
+| `a b`                | descendant                           | `phase task`           |
+| `a > b`              | direct child                         | `phase > task`         |
+| `:first-child`       | first child of its parent            | `task:first-child`     |
+| `:nth-child(n)`      | nth child, 1-indexed                 | `task:nth-child(2)`    |
+| `:not(simple)`       | negation of a simple selector        | `task:not([status])`   |
+
+Sibling combinators (`~`, `+`), `:has()`, `:contains()`, and case-insensitive flags are not yet supported. Full grammar in [`docs/SELECTOR-GRAMMAR.md`](docs/SELECTOR-GRAMMAR.md).
+
+## Use cases
+
+- LLM tool output: structured XML-tagged blocks embedded in markdown responses.
+- Agent state machines stored as markdown (the use case marxml was built for).
+- Static-site / docs pipelines with structured callouts.
+- Anywhere markdown-as-data meets a hot loop.
+
+## How it works
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the tokenizer state machine, the two-track API split, and the mutation strategy (string-splicing rather than AST rewrite).
+
+## Layout
 
 ```
 marxml/
-├── crates/marxml/         # core Rust crate → crates.io
-└── bindings/node/         # napi-rs wrapper  → npm
+├── crates/marxml/        # Rust crate → crates.io
+│   └── benches/          # criterion benches (also wired to CodSpeed)
+└── bindings/node/        # napi-rs wrapper → npm
+    └── npm/<target>/     # per-platform binary sub-packages
 ```
 
 ## License
 
-Dual-licensed under either of [MIT](./LICENSE-MIT) or [Apache 2.0](./LICENSE-APACHE) at your option.
+Dual-licensed under either [MIT](./LICENSE-MIT) or [Apache 2.0](./LICENSE-APACHE) at your option.

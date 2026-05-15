@@ -1,0 +1,6 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: "format!(\"{}: {}\", error_kind(&err), err)"
+input_file: crates/marxml/tests/fixtures/parse_fail/06-unterminated-attr-value.md
+---
+MalformedAttribute: line 1: malformed attribute on <task> — unterminated value of id

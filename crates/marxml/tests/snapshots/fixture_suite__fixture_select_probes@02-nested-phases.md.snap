@@ -1,0 +1,14 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/select/02-nested-phases.md
+---
+task -> [task#1.1, task#1.2, task#2.1]
+phase -> [phase#1, phase#2]
+* -> [phase#1, task#1.1, task#1.2, phase#2, task#2.1]
+task[status="todo"] -> [task#1.1, task#2.1]
+task[id^="1."] -> [task#1.1, task#1.2]
+phase task -> [task#1.1, task#1.2, task#2.1]
+phase > task -> [task#1.1, task#1.2, task#2.1]
+*:first-child -> [phase#1, task#1.1, task#2.1]
+*:not([id]) -> []

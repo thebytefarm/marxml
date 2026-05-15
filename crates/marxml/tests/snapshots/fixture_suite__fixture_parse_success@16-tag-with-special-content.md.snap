@@ -1,0 +1,9 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/16-tag-with-special-content.md
+---
+root_count = 1
+root[0]:
+  <snippet>  @ L1:O0 -> L5:O58
+    content="\nif x < 3 && y > 0 {\n  return \"yes\";\n}\n"

@@ -1,0 +1,9 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/validate/02-missing-required.md
+---
+valid: false
+  - line 1: <phase> missing required attribute id
+  - line 1: <phase> missing required attribute status
+  - line 2: <task> missing required attribute id

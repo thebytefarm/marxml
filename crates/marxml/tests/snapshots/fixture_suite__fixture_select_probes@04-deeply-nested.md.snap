@@ -1,0 +1,14 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/select/04-deeply-nested.md
+---
+task -> []
+phase -> []
+* -> [a#root, b, c, d, e#leaf]
+task[status="todo"] -> []
+task[id^="1."] -> []
+phase task -> []
+phase > task -> []
+*:first-child -> [a#root, b, c, d, e#leaf]
+*:not([id]) -> [b, c, d]

@@ -1,0 +1,15 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/mutate/01-task-status.md
+---
+--- update(task, [(status, done)]) ---
+<task id="1" status="done">do thing</task>
+
+
+--- replace_content(task, NEW) ---
+<task id="1" status="todo">NEW</task>
+
+
+--- replace_in(task, /todo/, done) ---
+<task id="1" status="todo">do thing</task>

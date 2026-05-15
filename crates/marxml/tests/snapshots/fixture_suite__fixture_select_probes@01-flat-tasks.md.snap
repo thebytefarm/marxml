@@ -1,0 +1,14 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: out
+input_file: crates/marxml/tests/fixtures/select/01-flat-tasks.md
+---
+task -> [task#1.1, task#1.2, task#2.1]
+phase -> [phase#p1]
+* -> [task#1.1, task#1.2, task#2.1, phase#p1, note]
+task[status="todo"] -> [task#1.1, task#2.1]
+task[id^="1."] -> [task#1.1, task#1.2]
+phase task -> []
+phase > task -> []
+*:first-child -> [task#1.1]
+*:not([id]) -> [note]

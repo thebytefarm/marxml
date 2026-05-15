@@ -1,0 +1,17 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: dump_doc(&doc)
+input_file: crates/marxml/tests/fixtures/parse/06-nested.md
+---
+root_count = 1
+root[0]:
+  <phase id="1">  @ L1:O0 -> L7:O148
+    text="\n  \n"
+    <task id="1.1">  @ L2:O17 -> L6:O139
+      text="\n    \n    \n    \n  "
+      <status>  @ L3:O37 -> L3:O58
+        content="todo"
+      <criterion>  @ L4:O63 -> L4:O93
+        content="do this"
+      <criterion>  @ L5:O98 -> L5:O129
+        content="and that"

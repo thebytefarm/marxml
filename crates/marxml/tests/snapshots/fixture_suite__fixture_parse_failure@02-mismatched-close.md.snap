@@ -1,0 +1,6 @@
+---
+source: crates/marxml/tests/fixture_suite.rs
+expression: "format!(\"{}: {}\", error_kind(&err), err)"
+input_file: crates/marxml/tests/fixtures/parse_fail/02-mismatched-close.md
+---
+MismatchedClose: line 1: </a> does not match the most recent open tag <b>
