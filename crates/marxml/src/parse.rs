@@ -22,14 +22,14 @@ use crate::Markdown;
 /// recursive tree walks (validation, serialization, selector matching) blow
 /// the stack. The limit is intentionally generous for hand-authored markdown
 /// while staying well below the default Rust stack size.
-pub(crate) const MAX_DEPTH: u32 = 1024;
+pub const MAX_DEPTH: u32 = 1024;
 
 /// Maximum byte length of input accepted by the parser.
 ///
-/// Source positions are stored as `u32` for compact `ElementData`; inputs
+/// Source positions are stored as `u32` for compact element storage; inputs
 /// larger than this cannot have their offsets tracked accurately and are
 /// rejected up front rather than silently producing wrong spans.
-pub(crate) const MAX_INPUT_BYTES: usize = u32::MAX as usize;
+pub const MAX_INPUT_BYTES: usize = u32::MAX as usize;
 
 /// Parse a full markdown+XML document.
 ///
@@ -214,18 +214,16 @@ fn check_duplicate_id(
         return Ok(());
     };
     let scope = seen.get_or_insert_with(HashMap::new);
-    if let Some(bucket) = scope.get_mut(tag) {
-        if !bucket.insert(id.to_string()) {
-            return Err(ParseError::DuplicateId {
-                tag: tag.to_string(),
-                id: id.to_string(),
-                line,
-            });
-        }
-    } else {
-        let mut bucket = HashSet::with_capacity(1);
-        bucket.insert(id.to_string());
-        scope.insert(tag.to_string(), bucket);
+    if !scope
+        .entry(tag.to_string())
+        .or_default()
+        .insert(id.to_string())
+    {
+        return Err(ParseError::DuplicateId {
+            tag: tag.to_string(),
+            id: id.to_string(),
+            line,
+        });
     }
     Ok(())
 }

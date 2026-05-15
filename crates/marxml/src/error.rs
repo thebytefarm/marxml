@@ -8,6 +8,7 @@ use thiserror::Error;
 /// position in the source document. The error's `Display` impl produces a
 /// human-readable message that includes the line number.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ParseError {
     /// An opening tag had no matching closing tag.
     #[error("line {line}: <{tag}> has no matching </{tag}>")]
@@ -114,12 +115,13 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    /// 1-based line number where the error was detected.
+    /// 1-based line number where the error was detected, when one is
+    /// available.
     ///
-    /// Returns `0` for [`ParseError::InputTooLarge`] — that variant is raised
-    /// before the input is scanned, so no source position is available.
+    /// Returns `None` for [`ParseError::InputTooLarge`] — that variant is
+    /// raised before the input is scanned, so no source position exists.
     #[must_use]
-    pub fn line(&self) -> u32 {
+    pub fn line(&self) -> Option<u32> {
         match self {
             Self::UnclosedTag { line, .. }
             | Self::MismatchedClose { line, .. }
@@ -128,8 +130,8 @@ impl ParseError {
             | Self::MalformedAttribute { line, .. }
             | Self::DuplicateId { line, .. }
             | Self::MaxDepthExceeded { line, .. }
-            | Self::DuplicateAttr { line, .. } => *line,
-            Self::InputTooLarge { .. } => 0,
+            | Self::DuplicateAttr { line, .. } => Some(*line),
+            Self::InputTooLarge { .. } => None,
         }
     }
 }

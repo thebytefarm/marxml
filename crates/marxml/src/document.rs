@@ -73,16 +73,20 @@ impl Markdown {
     /// element, its value is replaced. Otherwise the attribute is appended
     /// at the end of the element's attribute list.
     ///
-    /// `new_attrs` names must be valid XML names (see [`crate::is_valid_name`])
-    /// and must not repeat. Either violation is a programmer error: this
-    /// function `debug_assert!`s in debug builds and returns the source
-    /// document unchanged in release. Use [`crate::escape_attr`] when the
-    /// value contains user-controlled bytes — `update` escapes for you, but
-    /// the helper documents that intent at the call site.
-    ///
     /// The rewritten opening tag uses canonical whitespace: a single space
     /// between attributes, with the closing `>` (or `/>`) attached. Authors
     /// of pretty-printed source may notice spacing changes on touched tags.
+    ///
+    /// Use [`crate::escape_attr`] when the value contains user-controlled
+    /// bytes — `update` escapes for you, but the helper documents that
+    /// intent at the call site.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `new_attrs` contains an entry whose name is not a valid
+    /// XML name (see [`crate::is_valid_name`]) or repeats an earlier name.
+    /// Both conditions are programmer errors; use [`Self::try_update`] for
+    /// runtime-sourced attribute slices that may carry bad input.
     #[must_use]
     pub fn update(&self, sel: &Selector, new_attrs: &[(&str, &str)]) -> String {
         mutate::update(self, sel, new_attrs)
@@ -120,7 +124,7 @@ impl Markdown {
         mutate::replace_text_in(self, sel, pattern, replacement)
     }
 
-    /// Fallible variant of [`Self::update`]. Returns a [`MutationReport`]
+    /// Fallible variant of [`Self::update`]. Returns a [`crate::MutationReport`]
     /// (with the rewritten document and applied/skipped counts) on success,
     /// or a [`crate::MutateError`] on programmer error (invalid XML name or
     /// duplicate key in `new_attrs`).
@@ -137,7 +141,7 @@ impl Markdown {
     }
 
     /// Fallible variant of [`Self::replace_content`] returning a
-    /// [`MutationReport`] so callers can see how many matches were applied
+    /// [`crate::MutationReport`] so callers can see how many matches were applied
     /// vs. skipped because of overlap with an outer match.
     #[must_use]
     pub fn try_replace_content(&self, sel: &Selector, new_body: &str) -> crate::MutationReport {
@@ -145,7 +149,7 @@ impl Markdown {
     }
 
     /// Fallible variant of [`Self::replace_in`] returning a
-    /// [`MutationReport`].
+    /// [`crate::MutationReport`].
     #[must_use]
     pub fn try_replace_in(
         &self,
@@ -159,7 +163,7 @@ impl Markdown {
     /// Serialize the parsed XML elements back to a flat XML string.
     ///
     /// Surrounding markdown text is dropped — this is just the structured
-    /// payload. Pass [`SerializeOpts::pretty`] for indented multi-line output.
+    /// payload. Pass [`crate::SerializeOpts::pretty`] for indented multi-line output.
     #[must_use]
     pub fn to_xml(&self, opts: &crate::SerializeOpts) -> String {
         crate::serialize::to_xml(self, opts)

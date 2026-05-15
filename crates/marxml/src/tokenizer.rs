@@ -73,7 +73,17 @@ pub(crate) struct TokenStream {
 /// byte ranges of every comment / CDATA section.
 ///
 /// Returns `Err` on the first malformed tag encountered.
+///
+/// # Panics
+///
+/// Debug builds assert `input.len() <= u32::MAX`. `parse::parse` enforces
+/// this at its public entry, so this is a defense-in-depth check for the
+/// `pub(crate)` boundary — release builds elide it.
 pub(crate) fn tokenize(input: &str) -> Result<TokenStream, ParseError> {
+    debug_assert!(
+        u32::try_from(input.len()).is_ok(),
+        "tokenize() requires input bounded by MAX_INPUT_BYTES"
+    );
     let bytes = input.as_bytes();
     let mut tokens = Vec::new();
     let mut trivia: Vec<core::ops::Range<usize>> = Vec::new();

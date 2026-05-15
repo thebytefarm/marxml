@@ -127,9 +127,11 @@ impl<'a> ElementRef<'a> {
 
     /// Source span covering the full element (opening tag through closing tag,
     /// or the entire self-closing tag).
+    ///
+    /// Returned by value — [`SourceSpan`] is `Copy` and small.
     #[must_use]
-    pub fn location(&self) -> &'a SourceSpan {
-        &self.data.span
+    pub fn location(&self) -> SourceSpan {
+        self.data.span
     }
 
     /// `true` if this element was written as `<tag/>` rather than
@@ -169,7 +171,8 @@ impl<'a> ElementRef<'a> {
 /// whole document; the iterator advances a monotonic index into it so
 /// iteration over text segments stays linear in `(children + trivia)`
 /// rather than `children × trivia`.
-pub struct TextSegments<'a> {
+#[derive(Debug, Clone)]
+pub(crate) struct TextSegments<'a> {
     raw: &'a str,
     cursor: usize,
     end: usize,

@@ -4,6 +4,7 @@ use thiserror::Error;
 
 /// An error returned when a selector string fails to parse.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SelectorError {
     /// Selector string was empty.
     #[error("selector is empty")]

@@ -30,7 +30,10 @@ pub(super) fn parse(input: &str) -> Result<CompiledSelector, SelectorError> {
     // compound parser, so we don't recheck — we just consume commas.
     let mut compounds = vec![p.parse_compound()?];
     while !p.at_end() {
-        p.advance(1); // consume the `,`
+        // `parse_compound` stops on `,` or end-of-input; surface a clear
+        // syntax error if some future edit ever leaves the cursor on a
+        // different byte rather than silently consuming it.
+        p.expect(b',', "','")?;
         p.skip_ws();
         if p.at_end() {
             // `"a,"` — selector trails off after the comma.
@@ -226,9 +229,12 @@ impl<'a> Parser<'a> {
                         at: self.pos,
                     });
                 }
+                // Decrement on the same scope as the increment so an `?`
+                // early-return from `parse_simple` still restores depth.
                 self.not_depth += 1;
-                let inner = self.parse_simple()?;
+                let inner = self.parse_simple();
                 self.not_depth -= 1;
+                let inner = inner?;
                 self.expect(b')', "')' after :not argument")?;
                 Ok(Predicate::Not(Box::new(inner)))
             }
@@ -275,8 +281,16 @@ impl<'a> Parser<'a> {
     }
 
     fn read_unsigned_int(&mut self) -> Result<u32, SelectorError> {
+        // u32::MAX (4_294_967_295) is 10 digits. Cap the scan at 11 so we
+        // can still distinguish "leading zeros up to 10 digits" from
+        // "definitely out of range" without burning time on an unbounded
+        // attacker-controlled digit run.
+        const MAX_DIGITS: usize = 11;
         let start = self.pos;
         while self.peek().is_some_and(|b| b.is_ascii_digit()) {
+            if self.pos - start >= MAX_DIGITS {
+                return Err(self.syntax_error("integer out of range"));
+            }
             self.pos += 1;
         }
         if start == self.pos {
