@@ -325,18 +325,18 @@ fn parse_attribute_list(
                 });
             }
             _ => {
-                let (key, value, new_i, new_line) = parse_attribute(input, tag_name, i, line)?;
-                if seen_attribute(&attrs, seen_set.as_ref(), &key) {
+                let parsed = parse_attribute(input, tag_name, i, line)?;
+                if seen_attribute(&attrs, seen_set.as_ref(), &parsed.key) {
                     return Err(ParseError::DuplicateAttr {
                         tag: tag_name.to_string(),
-                        attr: key,
+                        attr: parsed.key,
                         line,
                     });
                 }
-                record_seen_attr(&attrs, &key, &mut seen_set);
-                attrs.push((key, value));
-                i = new_i;
-                line = new_line;
+                record_seen_attr(&attrs, &parsed.key, &mut seen_set);
+                attrs.push((parsed.key, parsed.value));
+                i = parsed.end;
+                line = parsed.line;
             }
         }
     }
@@ -377,12 +377,22 @@ fn record_seen_attr(
     *seen = Some(set);
 }
 
+/// One parsed `key="value"` attribute. Cursor (`end`, `line`) is positioned
+/// just past the closing `"` so the caller can resume scanning without
+/// re-walking the value.
+struct ParsedAttribute {
+    key: String,
+    value: String,
+    end: usize,
+    line: u32,
+}
+
 fn parse_attribute(
     input: &str,
     tag_name: &str,
     start: usize,
     start_line: u32,
-) -> Result<(String, String, usize, u32), ParseError> {
+) -> Result<ParsedAttribute, ParseError> {
     let bytes = input.as_bytes();
     let mut i = start;
     let mut line = start_line;
@@ -446,7 +456,12 @@ fn parse_attribute(
     let value = decode_entities(&input[value_start..i]).into_owned();
     i += 1; // past closing '"'
 
-    Ok((key, value, i, line))
+    Ok(ParsedAttribute {
+        key,
+        value,
+        end: i,
+        line,
+    })
 }
 
 /// If `bytes[start..]` opens with `<!--`, advance past the matching `-->`

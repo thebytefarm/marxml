@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 
 use thiserror::Error;
 
+use crate::escape::is_xml_whitespace_only;
 use crate::schema::{CompiledAttrKind, CompiledTagSchema, Schema};
 use crate::types::{ElementData, TextSegments};
 use crate::Markdown;
@@ -72,7 +73,7 @@ pub enum ValidationError {
 }
 
 /// Outcome of [`validate`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ValidationReport {
     errors: Vec<ValidationError>,
@@ -245,7 +246,7 @@ fn check_element(
     // trivia do not count toward satisfying `content_required`.
     if ts.content_required {
         let has_text =
-            TextSegments::new_with_trivia(raw, node, trivia).any(|s| !s.trim().is_empty());
+            TextSegments::new_with_trivia(raw, node, trivia).any(|s| !is_xml_whitespace_only(s));
         if !has_text {
             errors.push(ValidationError::EmptyContent {
                 tag: node.tag.clone(),
