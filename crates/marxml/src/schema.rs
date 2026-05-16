@@ -247,9 +247,13 @@ impl SchemaBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if any `AttrKind::Regex(...)` in the schema contains an invalid
-    /// pattern. Use [`SchemaBuilder::try_build`] for a fallible variant when
-    /// the schema is loaded from a config file or other runtime source.
+    /// Panics on any [`SchemaError`] produced by [`Self::try_build`]:
+    /// invalid regex patterns ([`SchemaError::InvalidRegex`]), duplicate
+    /// tag or attribute registrations ([`SchemaError::DuplicateTag`],
+    /// [`SchemaError::DuplicateAttr`]), or names that aren't valid XML
+    /// names ([`SchemaError::InvalidName`]). Use [`Self::try_build`] for a
+    /// fallible variant when the schema is loaded from a config file or
+    /// other runtime source.
     #[must_use]
     pub fn build(self) -> Schema {
         self.try_build()
@@ -257,12 +261,18 @@ impl SchemaBuilder {
     }
 
     /// Finalize the schema, returning an error instead of panicking on
-    /// invalid input. The recoverable counterpart of [`SchemaBuilder::build`].
+    /// invalid input. The recoverable counterpart of [`Self::build`].
     ///
     /// # Errors
     ///
-    /// Returns [`SchemaError::InvalidRegex`] if any `AttrKind::Regex(...)`
-    /// pattern fails to compile.
+    /// - [`SchemaError::InvalidRegex`] when an `AttrKind::Regex(...)`
+    ///   pattern fails to compile.
+    /// - [`SchemaError::DuplicateTag`] when the same tag was registered
+    ///   more than once on the builder.
+    /// - [`SchemaError::DuplicateAttr`] when the same attribute was
+    ///   registered more than once on a tag.
+    /// - [`SchemaError::InvalidName`] when a tag, attribute, or child
+    ///   name in the schema is not a valid XML name.
     pub fn try_build(self) -> Result<Schema, SchemaError> {
         if let Some(dup) = self.duplicates.into_iter().next() {
             return Err(SchemaError::DuplicateTag { tag: dup });

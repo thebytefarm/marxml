@@ -116,6 +116,20 @@ fn is_xml_illegal_control(ch: char) -> bool {
     (c < 0x20 && c != 0x09 && c != 0x0A && c != 0x0D) || c == 0x7F || (0x80..=0x9F).contains(&c)
 }
 
+// ─── XML-whitespace predicate ────────────────────────────────────────────
+
+/// `true` when every byte of `s` is one of the four XML whitespace bytes
+/// (`' '`, `'\t'`, `'\r'`, `'\n'`).
+///
+/// Distinct from [`str::trim`], which uses Unicode whitespace semantics —
+/// XML's whitespace grammar is ASCII-only, so structural-emptiness checks
+/// inside an XML serializer/validator should honor that.
+#[inline]
+#[must_use]
+pub(crate) fn is_xml_whitespace_only(s: &str) -> bool {
+    s.bytes().all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+}
+
 // ─── XML-name predicates ─────────────────────────────────────────────────
 
 /// `true` when `b` could be the first byte of an XML name (letter or `_`).

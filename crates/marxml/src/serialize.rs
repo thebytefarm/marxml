@@ -13,7 +13,9 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::escape::{decode_entities, push_escaped_attr, push_escaped_text};
+use crate::escape::{
+    decode_entities, is_xml_whitespace_only, push_escaped_attr, push_escaped_text,
+};
 use crate::types::{ElementData, ElementRef, TextSegments};
 use crate::Markdown;
 
@@ -41,6 +43,14 @@ pub struct SerializeOpts {
 }
 
 impl SerializeOpts {
+    /// Tight defaults — no indentation, no empty-tag collapsing. Equivalent
+    /// to [`SerializeOpts::default`]; provided as the conventional
+    /// constructor pair for types that also implement `Default`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Pretty-print defaults: 2-space indentation, self-close empty tags.
     #[must_use]
     pub fn pretty() -> Self {
@@ -120,7 +130,7 @@ fn emit_element(
         push_escaped_attr(out, v);
         out.push('"');
     }
-    let has_text = text_with_trivia(raw, el, trivia).any(|s| !s.trim().is_empty());
+    let has_text = text_with_trivia(raw, el, trivia).any(|s| !is_xml_whitespace_only(s));
     let is_empty = el.children.is_empty() && !has_text;
     if is_empty && (el.self_closing || opts.self_close_empty) {
         out.push_str("/>");
@@ -231,7 +241,7 @@ fn emit_pretty_children(
     depth: usize,
     out: &mut String,
 ) {
-    let has_inline_text = text_with_trivia(raw, el, trivia).any(|s| !s.trim().is_empty());
+    let has_inline_text = text_with_trivia(raw, el, trivia).any(|s| !is_xml_whitespace_only(s));
     if has_inline_text {
         // Mixed content: emit text segments (escaped, trivia-skipped)
         // interleaved with re-emitted children. Disable indent for the

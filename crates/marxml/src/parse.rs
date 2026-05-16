@@ -155,10 +155,14 @@ fn assemble(input: String, stream: TokenStream) -> Result<Markdown, ParseError> 
                 span,
                 body_end,
             } => {
-                let frame = stack.pop().ok_or_else(|| ParseError::StrayClose {
-                    tag: name.clone(),
-                    line: span.start.line,
-                })?;
+                // let-else lets the error path move `name` directly instead
+                // of cloning to satisfy the `ok_or_else` closure.
+                let Some(frame) = stack.pop() else {
+                    return Err(ParseError::StrayClose {
+                        tag: name,
+                        line: span.start.line,
+                    });
+                };
                 if frame.name != name {
                     return Err(ParseError::MismatchedClose {
                         found: name,

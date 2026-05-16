@@ -30,6 +30,16 @@ impl std::str::FromStr for Markdown {
     }
 }
 
+impl TryFrom<String> for Markdown {
+    type Error = crate::ParseError;
+
+    /// Equivalent to [`crate::parse_owned`]. Lets callers reuse the
+    /// standard conversion vocabulary for owned input.
+    fn try_from(input: String) -> Result<Self, Self::Error> {
+        crate::parse_owned(input)
+    }
+}
+
 impl Markdown {
     pub(crate) fn from_parts(
         raw: String,
