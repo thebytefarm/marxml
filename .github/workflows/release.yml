@@ -141,14 +141,9 @@ jobs:
       - uses: pnpm/action-setup@v6
         with:
           version: 11
-      # Node 24 — ships npm 11+ which has trusted publishing support
-      # built-in. Node 22 LTS's bundled npm 10.x is older than the npm
-      # 11.5.1+ trusted publishing requirement, and the in-place `npm
-      # install -g npm@latest` upgrade is unreliable (Node 22.22.2's npm
-      # has a broken bundled dep tree). Build matrix can stay on Node 22.
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24 # ships npm 11+ for trusted publishing
           registry-url: "https://registry.npmjs.org"
           cache: pnpm
           cache-dependency-path: bindings/node/pnpm-lock.yaml
