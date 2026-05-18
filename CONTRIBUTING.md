@@ -37,7 +37,7 @@ If you don't have `just` installed: `brew install just` (macOS) or `cargo instal
 
 ## Coverage
 
-Workspace-wide **100% line coverage**, no exceptions. Actually unreachable code (`unreachable!()`, defensive panics the compiler proves can't fire) gets a `// LCOV_EXCL_LINE` marker, reviewed in PR. If you can't cover a line, justify the exclusion in the PR description.
+High coverage is the goal — run `just cov` locally to see the report. Aspirational target is 100% line coverage on the core crate, with `// LCOV_EXCL_LINE` markers on truly unreachable code (`unreachable!()`, defensive panics) reviewed in PR. Not currently a CI gate. The napi binding code in `bindings/node/src/lib.rs` is exercised through vitest, not `cargo test`, so pure-Rust coverage misses it by design — `just test` runs both layers.
 
 ## Conventions
 

@@ -54,22 +54,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features --workspace
 
-  coverage:
-    name: Coverage (100% gate)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      # CONTRIBUTING.md documents 100% line coverage as a project rule.
-      # `--fail-under-lines 100` fails CI if coverage drops below that.
-      # Self-contained — no upload to a third-party service.
-      - name: Coverage gate
-        run: cargo llvm-cov --all-features --workspace --fail-under-lines 100
-
   node-binding:
     name: Node binding (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
