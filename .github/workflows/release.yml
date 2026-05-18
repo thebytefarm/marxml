@@ -85,6 +85,12 @@ jobs:
           cache-dependency-path: bindings/node/pnpm-lock.yaml
       - name: Install
         run: pnpm install --frozen-lockfile
+      # `napi build --use-cross` shells out to the `cross` CLI for Docker-
+      # based cross-compilation. It isn't on the runner by default — install
+      # it for the matrix entries that need it.
+      - name: Install cross
+        if: matrix.use_cross
+        uses: taiki-e/install-action@cross
       - name: Build (cross)
         if: matrix.use_cross
         run: pnpm exec napi build --platform --release --target ${{ matrix.target }} --js-package-name marxml --use-cross
