@@ -9,12 +9,14 @@ name: Release PR
 # (`rc.0` → `rc.1` → …) until a stable release consumes the changesets.
 
 on:
+  # Run on every push to main. Knope short-circuits with a clean no-op when
+  # `.changeset/*.md` is empty, so this isn't wasteful — and dropping a path
+  # filter means a previously-orphaned changeset (e.g. left behind when a
+  # release-pr run failed) gets picked up by the next docs/CI/refactor push
+  # to main, instead of sitting there until someone touches the changeset
+  # file itself.
   push:
     branches: [main]
-    paths:
-      - ".changeset/**"
-      - "Cargo.toml"
-      - "bindings/node/package.json"
   workflow_dispatch:
     inputs:
       prerelease:
