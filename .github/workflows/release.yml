@@ -141,17 +141,17 @@ jobs:
       - uses: pnpm/action-setup@v6
         with:
           version: 11
+      # Node 24 — ships npm 11+ which has trusted publishing support
+      # built-in. Node 22 LTS's bundled npm 10.x is older than the npm
+      # 11.5.1+ trusted publishing requirement, and the in-place `npm
+      # install -g npm@latest` upgrade is unreliable (Node 22.22.2's npm
+      # has a broken bundled dep tree). Build matrix can stay on Node 22.
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           registry-url: "https://registry.npmjs.org"
           cache: pnpm
           cache-dependency-path: bindings/node/pnpm-lock.yaml
-      # Trusted publishing requires npm >= 11.5.1; Node 22 LTS ships an older
-      # npm 10.x. Upgrade in-place so `npm publish` can exchange the GH OIDC
-      # token for a short-lived registry token.
-      - name: Upgrade npm
-        run: npm install -g npm@latest
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Collect artifacts
