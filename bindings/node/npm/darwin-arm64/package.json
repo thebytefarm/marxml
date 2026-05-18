@@ -8,7 +8,7 @@
   "files": [
     "marxml.darwin-arm64.node"
   ],
-  "description": "Fast markdown + XML query and mutation. Rust core with native Node bindings.",
+  "description": "Prebuilt marxml binary for macOS (Apple Silicon / arm64)",
   "keywords": [
     "markdown",
     "xml",

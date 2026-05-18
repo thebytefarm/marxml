@@ -8,7 +8,7 @@
   "files": [
     "marxml.linux-x64-musl.node"
   ],
-  "description": "Fast markdown + XML query and mutation. Rust core with native Node bindings.",
+  "description": "Prebuilt marxml binary for Linux x64 (musl / Alpine)",
   "keywords": [
     "markdown",
     "xml",

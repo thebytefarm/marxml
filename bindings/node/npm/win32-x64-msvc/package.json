@@ -8,7 +8,7 @@
   "files": [
     "marxml.win32-x64-msvc.node"
   ],
-  "description": "Fast markdown + XML query and mutation. Rust core with native Node bindings.",
+  "description": "Prebuilt marxml binary for Windows x64 (MSVC)",
   "keywords": [
     "markdown",
     "xml",
