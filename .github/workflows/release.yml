@@ -53,24 +53,35 @@ jobs:
         # `marxml-win32-x64-msvc` name reservation was blocked by npm spam
         # detection on first publish. Re-enable here + in
         # `bindings/node/package.json#napi.targets` once npm support unblocks
-        # the name. See contributing/release.md.
+        # the name. Tracked in npm support ticket #4396187. See
+        # contributing/release.md.
+        #
+        # Linux cross-compile mirrors the canonical napi-rs pattern
+        # (napi-rs/package-template + rolldown):
+        #   - glibc arm64 → `--use-napi-cross` (prebuilt sysroots from the
+        #     napi-rs/cross-toolchain releases; no Docker)
+        #   - musl        → `-x` (= cargo-zigbuild; zig-cc as the linker)
+        # The older `--use-cross` (Docker via cross-rs) is deprecated for
+        # napi-rs and was unreliable because of ghcr.io pull timeouts.
         include:
-          # Both macOS targets build on Apple Silicon — rustup adds the
-          # x86_64 target and rustc cross-compiles to it natively. macos-13
-          # (Intel x64 image) is being deprecated and routinely sits in the
-          # runner queue.
+          # macOS: both targets build on Apple Silicon. rustup adds the x86_64
+          # target and rustc cross-compiles natively. macos-13 (Intel x64
+          # image) is being deprecated and routinely sits in the runner queue.
           - host: macos-latest
             target: aarch64-apple-darwin
+            build: pnpm exec napi build --platform --release --target aarch64-apple-darwin --js-package-name marxml
           - host: macos-latest
             target: x86_64-apple-darwin
+            build: pnpm exec napi build --platform --release --target x86_64-apple-darwin --js-package-name marxml
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            build: pnpm exec napi build --platform --release --target x86_64-unknown-linux-gnu --js-package-name marxml
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            use_cross: true
+            build: pnpm exec napi build --platform --release --target x86_64-unknown-linux-musl --js-package-name marxml -x
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            use_cross: true
+            build: pnpm exec napi build --platform --release --target aarch64-unknown-linux-gnu --js-package-name marxml --use-napi-cross
     runs-on: ${{ matrix.host }}
     defaults:
       run:
@@ -93,18 +104,22 @@ jobs:
           cache-dependency-path: bindings/node/pnpm-lock.yaml
       - name: Install
         run: pnpm install --frozen-lockfile
-      # `napi build --use-cross` shells out to the `cross` CLI for Docker-
-      # based cross-compilation. It isn't on the runner by default — install
-      # it for the matrix entries that need it.
-      - name: Install cross
-        if: matrix.use_cross
-        uses: taiki-e/install-action@cross
-      - name: Build (cross)
-        if: matrix.use_cross
-        run: pnpm exec napi build --platform --release --target ${{ matrix.target }} --js-package-name marxml --use-cross
-      - name: Build (native)
-        if: ${{ !matrix.use_cross }}
-        run: pnpm exec napi build --platform --release --target ${{ matrix.target }} --js-package-name marxml
+      # musl-only: zig provides the linker; cargo-zigbuild wraps cargo to
+      # invoke zig-cc. SHA-pinned to match rolldown's supply-chain pattern.
+      - name: Setup zig (musl only)
+        if: ${{ contains(matrix.target, 'musl') }}
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.15.1
+      - name: Install cargo-zigbuild (musl only)
+        if: ${{ contains(matrix.target, 'musl') }}
+        uses: taiki-e/install-action@b550161ef8a7bc4f2a671c0b03a18ac9ccedea1e # v2.79.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tool: cargo-zigbuild
+      - name: Build
+        run: ${{ matrix.build }}
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
