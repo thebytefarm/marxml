@@ -9,25 +9,15 @@ Both expose the same conceptual surface — parse, select, mutate, serialize, va
 
 ## Pipeline
 
-```
-markdown source
-     │
-     ▼
-┌────────────┐    Token stream
-│ tokenizer  │ ────────────────────┐
-└────────────┘                     │
-                                   ▼
-                            ┌────────────┐
-                            │   parser   │     stack-based tree assembly
-                            └────────────┘
-                                   │
-                                   ▼
-                            ┌────────────┐
-                            │  Markdown  │     element tree + raw source
-                            └────────────┘
-                       ┌───┬─────┴─────┬────┬────┐
-                       ▼   ▼           ▼    ▼    ▼
-                    select query  serialize mutate validate
+```mermaid
+flowchart TD
+  src["markdown source"] --> tok["tokenizer<br/><sub>byte-level state machine</sub>"]
+  tok -- "Token stream" --> par["parser<br/><sub>stack-based tree assembly</sub>"]
+  par --> md["Markdown<br/><sub>element tree + raw source</sub>"]
+  md --> sel["select"]
+  md --> ser["serialize"]
+  md --> mut["mutate"]
+  md --> val["validate"]
 ```
 
 The crate is layered so each stage is independently testable, and so the Node binding can stop at any level (e.g. `parse` returns a fully materialized JS object; `select` runs the same Rust matcher and materializes a `Vec<Element>` for JS).
@@ -36,19 +26,20 @@ The crate is layered so each stage is independently testable, and so the Node bi
 
 A linear, byte-level state machine over the input string. Scans for `<` followed by a name-start byte (letter or `_`), branches on whether it sees `/` for a close tag, then reads:
 
-```
-       Text
-        │
-        │ '<'
-        ▼
-     MaybeTag ─── '/' ──▶ CloseName ─── '>' ──▶ Token::Close
-        │
-        │ name-start
-        ▼
-     OpenName ─── name-char ──▶ OpenName ─── ws/'>'/'/' ──▶ AfterName
-                                                                │
-                                                                ▼
-                                                        Attrs / Self-close
+```mermaid
+stateDiagram-v2
+  [*] --> Text
+  Text --> MaybeTag: '<'
+  MaybeTag --> Text: other byte
+  MaybeTag --> CloseName: '/'
+  MaybeTag --> OpenName: name-start
+  CloseName --> Text: '>' (emit Close)
+  OpenName --> OpenName: name-char
+  OpenName --> AfterName: ws / '>' / '/'
+  AfterName --> Attrs: attr name
+  AfterName --> Text: '>' (emit Open)
+  AfterName --> Text: '/>' (emit SelfClose)
+  Attrs --> Text: '>' or '/>'
 ```
 
 - **Byte-level**, not character-level. UTF-8 multi-byte sequences pass through transparently in attribute values and content; their continuation bytes are always `>= 0x80` so they can't conflict with the ASCII syntax bytes (`<`, `>`, `"`, `/`, `=`).
@@ -123,17 +114,18 @@ Validation accumulates errors rather than short-circuiting — callers see every
 
 ## Two-track API
 
-The Rust crate exposes borrowed views (`ElementRef<'a>`) so common reads are zero-copy. The napi-rs binding can't expose borrowed references across the FFI boundary safely — JS doesn't understand Rust's borrow checker — so the binding materializes everything into owned `#[napi(object)]` shapes:
+The Rust crate exposes borrowed views (`ElementRef<'a>`) so common reads are zero-copy. The napi-rs binding can't expose borrowed references across the FFI boundary safely — JS doesn't understand Rust's borrow checker — so the binding holds an opaque parsed handle and materializes `Element` POJOs on demand:
 
-```
-Rust API                         Node API
-─────────                        ────────
-parse() -> Markdown              parse() -> { raw, elements: Element[] }
-doc.select(&Sel) -> Iterator     select(src, sel) -> Element[]
-ElementRef<'a> (Copy)            Element (plain JS object with children: Element[])
-```
+| Operation     | Rust                                  | Node                                          |
+| ------------- | ------------------------------------- | --------------------------------------------- |
+| Parse         | `parse(src) -> Markdown`              | `parse(src) -> MarkdownDoc` (factory POJO)    |
+| Element view  | `ElementRef<'a>` (`Copy`, zero-alloc) | `Element` (POJO with `children: Element[]`)   |
+| Query         | `doc.select(&sel) -> Iterator<...>`   | `doc.select(sel) -> Element[]`                |
+| Mutate        | `doc.update(&sel, &[...]) -> String`  | `doc.updateAttrs(sel, [...]) -> string`       |
+| Serialize     | `doc.to_xml(&opts) -> String`         | `doc.toXml(opts) -> string`                   |
+| Validate      | `validate(&doc, &schema) -> Report`   | `doc.validate(schema) -> ValidationReport`    |
 
-The binding layer is intentionally thin: 200-ish LOC of `#[napi]` wrappers that call into the same `marxml` crate. Adding a new method means one Rust function in the binding + one extra `index.d.ts` line (auto-generated by napi-rs codegen).
+The binding layer is intentionally thin: a `#[napi]` class (`NativeMarkdown`) wrapping `marxml::Markdown`, plus a JS factory wrapper (`marxml.mjs`) that hides the class behind a POJO. Adding a new method means one `#[napi]` fn + one bound method in the wrapper. Per-method signatures and JSDoc auto-generate into `index.d.ts` from the Rust `///` doc comments.
 
 ## Distribution
 

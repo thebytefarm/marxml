@@ -12,16 +12,20 @@
 > [!WARNING]
 > **Pre-release · under active development.** `marxml` is in the `0.0.x` placeholder phase — the names on crates.io and npm are reserved, but the working API lands in `0.1.0`. APIs, types, and selector grammar will change without notice until then. Don't depend on it in production yet.
 
-`marxml` parses markdown documents that embed XML-shaped tags and gives you a typed handle for querying, mutating, and serializing them. Built in Rust, distributed as both a [crates.io](https://crates.io/crates/marxml) crate and an [npm package](https://www.npmjs.com/package/marxml) with prebuilt native bindings via [napi-rs](https://napi.rs/).
-
-The Rust API mirrors [`scraper`](https://github.com/rust-scraper/scraper) — the de facto CSS-selector HTML library — adapted for markdown+XML. The Node API mirrors the same shape with JS-idiomatic ergonomics.
+`marxml` lets you read and write XML-shaped tags embedded in markdown documents. Find them with CSS-style selectors, change them surgically, validate they're well-formed — without rewriting the prose around them. Same API in Rust and Node.
 
 ## Features
 
-- **Extract data from XML tags inside markdown** — prompts, model output, plan docs. CSS-style selectors (`task[id^="4."]`, `phase > task`) find exactly the tag you want.
-- **Update XML in markdown without relying on the LLM** to parse or edit it. Surgical helpers change attributes or content; every other byte is preserved verbatim.
-- **Validate what came back** against a declarative schema — required/optional attributes, enum/regex constraints, required children, exclusive allowlists.
-- **Built for speed.** Rust core with single-pass parsing and compiled selectors. Node gets the same performance through prebuilt native bindings via [napi-rs](https://napi.rs/) — macOS (arm64, x64), Linux (x64-gnu, x64-musl, arm64-gnu), Windows (x64-msvc).
+- **Find tags with selectors.** `task[id^="4."]`, `phase > task`, `note:not([archived])` — the CSS subset you already know.
+- **Edit surgically.** Change an attribute or replace inner content. Every byte you didn't touch comes back identical: prose, whitespace, comments, ordering.
+- **Validate the shape.** Required attributes, enum/regex constraints, child rules — declarative schema, structured errors with line numbers.
+- **Fast on both sides.** Native speed in Node via prebuilt binaries for macOS, Linux, and Windows.
+
+## Why?
+
+`marxml` started as plumbing for a workflow agent — plan and phase-planning documents (think GSD-style trackers) stored as markdown with task state inside XML tags. Agents needed to update those tags reliably: flip a status, append a note, mark a child done — without rewriting the surrounding prose or hallucinating new structure.
+
+The general lesson: LLMs drift at the prose level but stay disciplined inside known XML tags. Scope the model's output to a tag, and the read/write boundary becomes deterministic again. `marxml` is the read/write layer for that boundary — selectors to find tags, byte-preserving mutation to change them, schema to verify what came back. Same shape in Rust and Node.
 
 ## Install
 
@@ -44,8 +48,8 @@ use marxml::{parse, Selector};
 
 let src = r#"
 <phase id="1" status="todo">
-  <task id="1.1"><status>todo</status></task>
-  <task id="1.2"><status>done</status></task>
+  <task id="1.1" status="todo">do this</task>
+  <task id="1.2" status="done">finished</task>
 </phase>
 "#;
 
@@ -64,73 +68,32 @@ println!("{updated}");
 ## Node quickstart
 
 ```ts
-import {
-  parse,
-  select,
-  updateAttrs,
-  replaceContent,
-  replaceInContent,
-  toXml,
-  toJson,
-  validateSchema,
-} from 'marxml'
+import { parse } from 'marxml'
 
-const src = `<task id="1" status="todo">do thing</task>`
+const src = `
+<phase id="1" status="todo">
+  <task id="1.1" status="todo">do this</task>
+  <task id="1.2" status="done">finished</task>
+</phase>
+`
 
 const doc = parse(src)
-// { raw: '<task id="1" status="todo">do thing</task>',
-//   elements: [{ tag: 'task', attrs: { id: '1', status: 'todo' }, ... }] }
 
-const tasks = select(src, 'task[status="todo"]')
-const updated = updateAttrs(src, 'task', [{ name: 'status', value: 'done' }])
+for (const task of doc.select('task[status="todo"]')) {
+  console.log(task.attrs.id) // "1.1"
+}
+
+const updated = doc.updateAttrs('task[status="todo"]', [
+  { name: 'status', value: 'done' },
+])
 ```
 
-## Selector cheat sheet
+## Docs
 
-| Pattern              | Meaning                              | Example                |
-| -------------------- | ------------------------------------ | ---------------------- |
-| `tag`                | tag name                             | `task`                 |
-| `*`                  | any element                          | `*`                    |
-| `[attr]`             | has attribute                        | `task[id]`             |
-| `[attr="val"]`       | attribute equals                     | `task[id="4.1"]`       |
-| `[attr^="x"]`        | attribute starts-with                | `task[id^="4."]`       |
-| `[attr$="x"]`        | attribute ends-with                  | `task[id$=".final"]`   |
-| `[attr*="x"]`        | attribute contains                   | `task[id*="."]`        |
-| `a, b`               | union                                | `task, phase`          |
-| `a b`                | descendant                           | `phase task`           |
-| `a > b`              | direct child                         | `phase > task`         |
-| `:first-child`       | first child of its parent            | `task:first-child`     |
-| `:nth-child(n)`      | nth child, 1-indexed                 | `task:nth-child(2)`    |
-| `:not(simple)`       | negation of a simple selector        | `task:not([status])`   |
-
-Sibling combinators (`~`, `+`), `:has()`, `:contains()`, and case-insensitive flags are not yet supported. Full grammar in [`docs/SELECTOR-GRAMMAR.md`](docs/SELECTOR-GRAMMAR.md).
-
-## Use cases
-
-- LLM tool output: structured XML-tagged blocks embedded in markdown responses.
-- Agent state machines stored as markdown (the use case marxml was built for).
-- Static-site / docs pipelines with structured callouts.
-- Anywhere markdown-as-data meets a hot loop.
-
-## Why?
-
-`marxml` started as plumbing for a workflow agent — plan and phase-planning documents (think GSD-style trackers) stored as markdown with task state inside XML tags. Agents needed to update those tags reliably: flip a status, append a note, mark a child done — without rewriting the surrounding prose or hallucinating new structure.
-
-The general lesson: LLMs drift at the prose level but stay disciplined inside known XML tags. Scope the model's output to a tag, and the read/write boundary becomes deterministic again. `marxml` is the read/write layer for that boundary — selectors to find tags, byte-preserving mutation to change them, schema to verify what came back. Same shape in Rust and Node.
-
-## How it works
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the tokenizer state machine, the two-track API split, and the mutation strategy (string-splicing rather than AST rewrite).
-
-## Layout
-
-```
-marxml/
-├── crates/marxml/        # Rust crate → crates.io
-│   └── benches/          # criterion benches (also wired to CodSpeed)
-└── bindings/node/        # napi-rs wrapper → npm
-    └── npm/<target>/     # per-platform binary sub-packages
-```
+- [DSL reference](docs/dsl/) — selectors, validation schema, cookbook recipes, formal grammar.
+- [Rust reference](docs/reference/rust.md) — API surface, design notes, lints, MSRV.
+- [Node reference](docs/reference/node.md) — `MarkdownDoc` shape, distribution, regex behavior.
+- [Architecture](docs/ARCHITECTURE.md) — tokenizer, mutation strategy, two-track API.
 
 ## License
 

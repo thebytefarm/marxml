@@ -1,16 +1,23 @@
 name: Release
 
+# Runs when the "chore: release X.Y.Z" PR opened by knope merges into main.
+# Pipeline: version-sync gate → cross-compile matrix → publish (npm + crate)
+# → tag. The tag is created last so `vX.Y.Z` only exists when artifacts
+# actually shipped.
+#
+# Detection: knope's release PR is always titled `chore: release <ver>` and
+# the squash/merge commit inherits that subject.
+
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 permissions:
   contents: write
   id-token: write # for npm provenance
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 env:
@@ -23,12 +30,13 @@ jobs:
   version-sync:
     name: Version sync gate
     runs-on: ubuntu-latest
+    if: "${{ startsWith(github.event.head_commit.message, 'chore: release ') }}"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: ./scripts/check-versions.sh "${GITHUB_REF_NAME}"
+      - run: ./scripts/check-versions.sh
 
   # ─── 2. Cross-compile matrix ──────────────────────────────────────────────
   build:
@@ -130,3 +138,29 @@ jobs:
       - name: Publish crates.io
         working-directory: .
         run: cargo publish -p marxml --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+
+  # ─── 4. Tag ───────────────────────────────────────────────────────────────
+  # Runs only after publish succeeds. The tag is the receipt: if `vX.Y.Z`
+  # exists, all artifacts shipped. If publish fails partway, no tag is
+  # created — fix forward with another changeset, don't try to recover the
+  # half-published version.
+  tag:
+    name: Tag release
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git author
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Knope — release (create tag)
+        uses: knope-dev/action@v2
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

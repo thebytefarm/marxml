@@ -1,7 +1,7 @@
 [package]
 name = "marxml"
 description = "Fast markdown + XML query and mutation. Rust core for the marxml ecosystem."
-readme = "../../README.md"
+readme = "README.md"
 keywords = ["markdown", "xml", "parser", "ast"]
 categories = ["parser-implementations", "text-processing"]
 version.workspace = true

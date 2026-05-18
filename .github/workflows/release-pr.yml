@@ -1,0 +1,61 @@
+name: Release PR
+
+# Opens (or updates) a "chore: release X.Y.Z" pull request whenever new
+# changesets land on main. Merging that PR triggers `release.yml`, which
+# publishes to npm + crates.io and then tags `vX.Y.Z` as the receipt.
+#
+# Manual dispatch with `prerelease: rc` produces `0.1.0-rc.0`-style versions
+# instead of stable. Subsequent RC dispatches increment the suffix
+# (`rc.0` → `rc.1` → …) until a stable release consumes the changesets.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".changeset/**"
+      - "Cargo.toml"
+      - "bindings/node/package.json"
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: "Prerelease label (e.g. 'rc' for 0.1.0-rc.0). Leave blank for a stable release."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Prepare release PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # knope needs full history to compute the bump
+
+      - name: Configure git author
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Knope — prepare release (stable)
+        if: ${{ inputs.prerelease == '' }}
+        uses: knope-dev/action@v2
+        with:
+          command: prepare-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Knope — prepare release (${{ inputs.prerelease }} prerelease)
+        if: ${{ inputs.prerelease != '' }}
+        uses: knope-dev/action@v2
+        with:
+          command: prepare-release --prerelease-label ${{ inputs.prerelease }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

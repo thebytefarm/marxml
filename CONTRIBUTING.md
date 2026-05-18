@@ -1,6 +1,8 @@
 # Contributing to marxml
 
-Thanks for your interest. marxml is a single Rust workspace that ships a [crates.io](https://crates.io/crates/marxml) crate plus an [npm](https://www.npmjs.com/package/marxml) package built via [napi-rs](https://napi.rs/).
+marxml is a single Rust workspace that ships a [crates.io](https://crates.io/crates/marxml) crate plus an [npm](https://www.npmjs.com/package/marxml) package built via [napi-rs](https://napi.rs/).
+
+High-level entry; deeper docs in [`contributing/`](./contributing/).
 
 ## Layout
 
@@ -35,7 +37,7 @@ If you don't have `just` installed: `brew install just` (macOS) or `cargo instal
 
 ## Coverage
 
-We hold a **100% line coverage** bar workspace-wide. Genuinely-unreachable code (`unreachable!()`, defensive panics the compiler proves can't fire) gets explicit `// LCOV_EXCL_LINE` markers; these are reviewed in PR. If you can't cover a line, justify the exclusion in the PR description.
+Workspace-wide **100% line coverage**, no exceptions. Actually unreachable code (`unreachable!()`, defensive panics the compiler proves can't fire) gets a `// LCOV_EXCL_LINE` marker, reviewed in PR. If you can't cover a line, justify the exclusion in the PR description.
 
 ## Conventions
 
@@ -43,6 +45,16 @@ We hold a **100% line coverage** bar workspace-wide. Genuinely-unreachable code 
 - One phase per PR, see [the plan](https://github.com/thebytefarm/marxml/blob/main/.specs/PLAN.md) for ordering.
 - No `unsafe` (forbidden at workspace level).
 - Run `just check` locally before pushing.
+
+## Releases
+
+Versioning + publishing run through [knope](https://knope.tech). The Rust crate and the npm package always release in lockstep on the same semver number. User-facing PRs add a `.changeset/<slug>.md`; internal changes (refactors, tests, docs) don't need one.
+
+Full release pipeline (changesets, RC builds, secrets, first-release walkthrough) → [`contributing/release.md`](./contributing/release.md).
+
+## Troubleshooting
+
+Symptoms and fixes for the release pipeline and other contributor-facing flows → [`contributing/troubleshooting.md`](./contributing/troubleshooting.md).
 
 ## Reporting bugs
 
