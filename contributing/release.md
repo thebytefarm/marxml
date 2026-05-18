@@ -37,6 +37,8 @@ Two workflows, chained:
 
 The tag is the receipt. If `vX.Y.Z` exists on the repo, every artifact for that version shipped. If `release.yml` fails partway (build matrix flake, registry hiccup, etc.) no tag is created. See [troubleshooting → "publish failed partway"](./troubleshooting.md#release-yml-failed-after-some-artifacts-published) for how to recover.
 
+The npm side of the publish step is non-trivial — seven packages, a `package.json` that gets mutated mid-flight, platform dispatch at runtime. The full mechanics live in [`node-distribution.md`](./node-distribution.md).
+
 ## Cutting a release candidate
 
 Manually dispatch `release-pr.yml` with `prerelease: rc`. From `0.0.0` with a `minor` changeset:
@@ -51,26 +53,78 @@ To force a specific version, knope supports `--override-version 0.1.0-rc.0` (onl
 
 ## Secrets and permissions (one-time setup)
 
-The release pipeline needs two repo secrets and one repo permission:
+npm publishing uses **trusted publishing** (OIDC, no long-lived token). crates.io uses a scoped API token for now — see [trusted publishing on crates.io](#trusted-publishing-on-cratesio) for the migration path.
 
-| Secret                 | Where to get it                                                                     |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| `CARGO_REGISTRY_TOKEN` | crates.io → Account Settings → API Tokens → "New Token" (publish scope on `marxml`) |
-| `NPM_TOKEN`            | npmjs.com → Access Tokens → "Granular Access Token" (read+publish on `marxml`)      |
+### One repo secret
 
-Set both with:
+| Secret                 | Where to get it                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `CARGO_REGISTRY_TOKEN` | crates.io → Account Settings → API Tokens → "New Token" (`publish-update` scope on `marxml`) |
 
 ```sh
 gh secret set CARGO_REGISTRY_TOKEN --repo thebytefarm/marxml
-gh secret set NPM_TOKEN            --repo thebytefarm/marxml
 ```
 
-**GitHub Actions permissions** (Settings → Actions → General → Workflow permissions):
+### GitHub Actions permissions
+
+Settings → Actions → General → Workflow permissions:
 
 - ☑ Read and write permissions
 - ☑ Allow GitHub Actions to create and approve pull requests
 
-The first is set via API (already configured). The second isn't reliably exposed by the API. Check it manually in the UI before the first release.
+The first is set via API. The second isn't reliably exposed by the API. Check it manually in the UI before the first release.
+
+### npm trusted publishing (one-time)
+
+All seven npm packages (`marxml` + the six platform sub-packages) use trusted publishing. Setup is per-package and one-time.
+
+**Step 1 — reserve the platform sub-package names.** The main `marxml` already exists at `0.0.0` on npm. The six platform sub-packages don't yet, and trusted publishing can't be configured on a package that doesn't exist. Use the bundled script:
+
+```sh
+# Get a 24h granular token at https://www.npmjs.com/settings/<user>/tokens
+# Scope: read+publish on each of the six marxml-<target> names.
+npm login
+
+./scripts/reserve-npm-names.sh
+
+# Revoke the token immediately after. You won't need it again.
+```
+
+The script publishes a 0-byte placeholder to each of the six names. Idempotent. Re-running on a name that's already at `0.0.0` is a no-op.
+
+**Step 2 — configure trusted publishing on each of the 7 packages.** For each settings page (the script prints the URLs):
+
+- <https://www.npmjs.com/package/marxml/access>
+- <https://www.npmjs.com/package/marxml-darwin-arm64/access>
+- <https://www.npmjs.com/package/marxml-darwin-x64/access>
+- <https://www.npmjs.com/package/marxml-linux-arm64-gnu/access>
+- <https://www.npmjs.com/package/marxml-linux-x64-gnu/access>
+- <https://www.npmjs.com/package/marxml-linux-x64-musl/access>
+- <https://www.npmjs.com/package/marxml-win32-x64-msvc/access>
+
+Add a trusted publisher with:
+
+- **Publisher:** GitHub Actions
+- **Owner:** `thebytefarm`
+- **Repository:** `marxml`
+- **Workflow filename:** `release.yml`
+- **Environment:** leave blank (or set `release` only if you also create a GitHub Actions environment by that name. See [Manual approval gate](#manual-approval-gate-optional))
+
+`release.yml` has `id-token: write` and runs `npm install -g npm@latest` before publishing, so the npm CLI auto-detects OIDC. `NPM_CONFIG_PROVENANCE: true` is set on both publish steps so all 7 packages ship with provenance.
+
+### Trusted publishing on crates.io
+
+Same OIDC model, set up at <https://crates.io/crates/marxml/settings> → Trusted Publishers. Owner `thebytefarm`, repo `marxml`, workflow `release.yml`. Once enabled, replace the `cargo publish` step in `release.yml` with `rust-lang/crates-io-auth-action@v1` + a token-less `cargo publish`, and delete `CARGO_REGISTRY_TOKEN`. Pending. Track it.
+
+### Manual approval gate (optional)
+
+For extra safety, gate the `publish` job behind a GitHub Actions environment with required reviewers:
+
+1. Settings → Environments → New environment → `release`. Add yourself as required reviewer; restrict deployments to `main`.
+2. Add `environment: release` to the `publish` job in `release.yml`.
+3. Add `release` as the **Environment** value in each of the 7 npm trusted publisher configs and the crates.io one.
+
+Every release will pause for your one-click approval before any registry call. Recommended once the repo has more than one publisher.
 
 ## First-release walkthrough
 

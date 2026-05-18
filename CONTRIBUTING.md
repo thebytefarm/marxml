@@ -52,6 +52,8 @@ Versioning + publishing run through [knope](https://knope.tech). The Rust crate 
 
 Full release pipeline (changesets, RC builds, secrets, first-release walkthrough) → [`contributing/release.md`](./contributing/release.md).
 
+How the Node side actually ships — the 7-package split, what `@napi-rs/cli` mutates at publish time, install + runtime flow → [`contributing/node-distribution.md`](./contributing/node-distribution.md).
+
 ## Troubleshooting
 
 Symptoms and fixes for the release pipeline and other contributor-facing flows → [`contributing/troubleshooting.md`](./contributing/troubleshooting.md).

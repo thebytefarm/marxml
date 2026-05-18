@@ -14,7 +14,7 @@ on:
 
 permissions:
   contents: write
-  id-token: write # for npm provenance
+  id-token: write # OIDC for npm trusted publishing + provenance
 
 concurrency:
   group: release
@@ -115,6 +115,11 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           cache: pnpm
           cache-dependency-path: bindings/node/pnpm-lock.yaml
+      # Trusted publishing requires npm >= 11.5.1; Node 22 LTS ships an older
+      # npm 10.x. Upgrade in-place so `npm publish` can exchange the GH OIDC
+      # token for a short-lived registry token.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Collect artifacts
@@ -125,16 +130,17 @@ jobs:
         run: pnpm exec napi artifacts
       - name: Update per-platform package versions
         run: pnpm exec napi version
+      # `napi pre-publish` shells out to `npm publish` per sub-package and
+      # inherits process.env, so NPM_CONFIG_PROVENANCE flips provenance on for
+      # all six platform packages in one stroke. No NPM_TOKEN — auth is OIDC.
       - name: Publish per-platform packages
         run: pnpm exec napi pre-publish -t npm --skip-gh-release
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
       - name: Publish main npm package
-        run: npm publish --access public --provenance
+        run: npm publish --access public
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
       - name: Publish crates.io
         working-directory: .
         run: cargo publish -p marxml --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"

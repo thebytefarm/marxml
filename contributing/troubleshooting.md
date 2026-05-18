@@ -61,14 +61,33 @@ Things that go wrong in the release pipeline. Background → [contributing/relea
 
 </details>
 
+### `npm publish` fails with `unable to authenticate, need: Bearer`, `OIDC token exchange failed`, or `trusted publisher not configured`
+
+<details>
+<summary>Show fix</summary>
+
+**Cause:** Trusted publishing setup mismatch. The npm CLI requested an OIDC token from GitHub, but npmjs.com rejected it because the publisher config on that specific package doesn't match the runtime claims.
+
+**Diagnose, in order:**
+
+1. **Workflow filename mismatch.** npmjs.com trusted publisher config wants the exact filename `release.yml`. If you typed `Release.yml`, `release.yaml`, or `.github/workflows/release.yml`, fix it. Case-sensitive.
+2. **Environment mismatch.** If the publisher config has an Environment value set (e.g. `release`) but the `publish` job has no `environment:` key (or vice versa), OIDC validation fails. Make them agree, or clear both.
+3. **Package not configured.** All 7 packages need their own trusted publisher entry on npmjs.com. The error mentions which package failed. Re-run `./scripts/reserve-npm-names.sh` if a name doesn't exist; configure trusted publishing if it exists but is unconfigured.
+4. **npm version too old.** Trusted publishing needs npm ≥ 11.5.1. `release.yml` runs `npm install -g npm@latest` before publishing. If you removed that step, restore it.
+5. **`id-token: write` missing.** Same fix as the provenance failure above.
+
+Background → [node-distribution.md](./node-distribution.md), [release.md → npm trusted publishing](./release.md#npm-trusted-publishing-one-time).
+
+</details>
+
 ### Per-platform npm package fails to publish
 
 <details>
 <summary>Show fix</summary>
 
-**Cause:** `napi version` didn't update its `package.json` before publish.
+**Cause:** `napi version` didn't update its `package.json` before publish, or the `.node` binary wasn't moved into the sub-package dir by `napi artifacts`.
 
-**Fix:** Inspect `bindings/node/npm/<target>/package.json`. The version must match the main package.
+**Fix:** Inspect `bindings/node/npm/<target>/package.json` — its `version` must match the main package. Then check the sub-package dir actually contains the `.node` file referenced by its `main` field. Background on how these get assembled at publish time → [node-distribution.md → What `@napi-rs/cli` does at publish time](./node-distribution.md#what-napi-rscli-does-at-publish-time).
 
 </details>
 
