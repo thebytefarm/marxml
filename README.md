@@ -1,5 +1,6 @@
 <div align="center">
-  <p><strong>Fast markdown + XML query and mutation. Rust core, Node bindings.</strong></p>
+  <img src="https://raw.githubusercontent.com/thebytefarm/marxml/main/.github/assets/banner.png" alt="marxml" width="100%" />
+  <p><strong>Fast markdown + XML query and mutation. Rust core, Node bindings. Workers of the markup, unite.</strong></p>
 
 <a href="https://github.com/thebytefarm/marxml/actions/workflows/ci.yml"><img src="https://github.com/thebytefarm/marxml/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
 <a href="https://crates.io/crates/marxml"><img src="https://img.shields.io/crates/v/marxml" alt="crates.io" /></a>
@@ -111,6 +112,12 @@ Sibling combinators (`~`, `+`), `:has()`, `:contains()`, and case-insensitive fl
 - Agent state machines stored as markdown (the use case marxml was built for).
 - Static-site / docs pipelines with structured callouts.
 - Anywhere markdown-as-data meets a hot loop.
+
+## Why?
+
+Markdown is the lingua franca of LLM output. XML is what models reach for when they need structure inside it. The result is a hybrid the existing tooling fits poorly: markdown parsers flatten the tags into HTML, XML parsers choke on the surrounding prose, and ad-hoc regex collapses the moment tags nest.
+
+`marxml` treats the hybrid as the primary format. One tokenizer pass produces a typed tree you can query with CSS-subset selectors and mutate with byte-preserving string splices. Same shape in Rust and Node, same selectors, same semantics.
 
 ## How it works
 

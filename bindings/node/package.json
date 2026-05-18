@@ -13,15 +13,21 @@
   "bugs": {
     "url": "https://github.com/thebytefarm/marxml/issues"
   },
-  "main": "index.js",
-  "types": "index.d.ts",
-  "files": ["index.js", "index.d.ts", "README.md"],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./marxml.d.ts",
+      "import": "./marxml.mjs"
+    }
+  },
+  "types": "./marxml.d.ts",
+  "files": ["marxml.mjs", "marxml.d.ts", "index.js", "index.d.ts", "README.md"],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "build": "napi build --platform --release --js-package-name marxml",
-    "build:debug": "napi build --platform --js-package-name marxml",
+    "build": "napi build --platform --release --esm --js-package-name marxml",
+    "build:debug": "napi build --platform --esm --js-package-name marxml",
     "test": "vitest run"
   },
   "napi": {

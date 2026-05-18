@@ -1,12 +1,19 @@
 //! napi-rs bindings exposing the marxml crate to Node.
 //!
-//! Designed to mirror the Rust shape with JS-flavored adaptations:
-//! - Selectors are passed as plain strings (internally compiled per call).
-//! - `Markdown` and `Element` are returned as plain `#[napi(object)]` shapes
-//!   — flat data, no class instances. Material­ized once; query methods on
-//!   the JS side that need to walk back to the Rust tree are exposed as
-//!   top-level functions taking a parsed handle (or accepting the raw
-//!   source).
+//! The public JS API is a factory: `parse(source)` returns a `NativeMarkdown`
+//! handle whose methods (`select`, `updateAttrs`, `toXml`, …) close over the
+//! parsed document. The factory shape lives in the JS wrapper at
+//! `marxml.mjs`; this file exposes the underlying napi class.
+//!
+//! Design notes:
+//! - The document is parsed once into the `NativeMarkdown` handle. Subsequent
+//!   queries and mutations reuse that handle — no per-call reparse.
+//! - All fallible operations route through the crate's `try_*` variants and
+//!   surface errors as `napi::Error` with `InvalidArg` status. The binding
+//!   does not panic on caller-supplied input.
+//! - `Element` is still a flat `#[napi(object)]` POJO for the `elements`
+//!   getter; materializing the whole tree as opaque handles is a separate
+//!   refactor.
 
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::missing_errors_doc)]
@@ -15,31 +22,46 @@
 use std::collections::HashMap;
 
 use napi::bindgen_prelude::Either;
-use napi::Result;
+use napi::{Error, Result, Status};
 use napi_derive::napi;
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 
-// ─── Shape types crossing the FFI ─────────────────────────────────────────
+// ─── Flat shape types crossing the FFI ────────────────────────────────────
 
+/// One-based line + zero-based byte offset into the source document.
 #[napi(object)]
 pub struct SourcePosition {
+    /// One-based line number.
     pub line: u32,
+    /// Zero-based byte offset into the source.
     pub offset: u32,
 }
 
+/// Half-open `[start, end)` source range.
 #[napi(object)]
 pub struct SourceSpan {
+    /// Inclusive start position.
     pub start: SourcePosition,
+    /// Exclusive end position.
     pub end: SourcePosition,
 }
 
+/// A parsed XML element, materialized for JS consumption.
 #[napi(object)]
 pub struct Element {
+    /// Tag name (e.g. `"task"`).
     pub tag: String,
+    /// Attribute key/value pairs in source order.
     pub attrs: HashMap<String, String>,
+    /// Inner content as a raw slice of the original source (entity
+    /// references not decoded). Empty for self-closing tags.
     pub content: String,
+    /// Direct child elements in source order.
     pub children: Vec<Element>,
+    /// `true` for `<tag/>`, `false` for `<tag>…</tag>`.
     pub self_closing: bool,
+    /// Source span covering the entire element including its open and close
+    /// tags.
     pub loc: SourceSpan,
 }
 
@@ -71,184 +93,294 @@ impl Element {
     }
 }
 
-#[napi(object)]
-pub struct Markdown {
-    pub raw: String,
-    pub elements: Vec<Element>,
-}
-
-impl Markdown {
-    fn from_doc(doc: &marxml::Markdown) -> Self {
-        let elements: Vec<Element> = doc.root_elements().map(|e| Element::from_ref(&e)).collect();
-        Self {
-            raw: doc.raw().to_string(),
-            elements,
-        }
-    }
-}
-
+/// One attribute update for [`NativeMarkdown::update_attrs`].
 #[napi(object)]
 pub struct AttrUpdate {
+    /// Attribute name (must be a valid XML name).
     pub name: String,
+    /// New attribute value.
     pub value: String,
 }
 
+/// Accepts a JS `RegExp` by destructuring its serializable fields. The
+/// wrapper at `marxml.mjs` handles the conversion from a real `RegExp`
+/// instance.
+#[napi(object)]
+pub struct RegExpShape {
+    /// The pattern body, without the surrounding `/`.
+    pub source: String,
+    /// JS regex flags; `i`/`m`/`s`/`x` are forwarded to the Rust engine,
+    /// `g`/`u`/`y`/`d` are ignored as they have no Rust-side equivalent.
+    pub flags: Option<String>,
+}
+
+/// One validation failure surfaced by [`NativeMarkdown::validate`].
 #[napi(object)]
 pub struct ValidationError {
+    /// Stable error kind: `"missing_attr"`, `"invalid_attr"`,
+    /// `"missing_child"`, `"unexpected_child"`, `"empty_content"`, or
+    /// `"unknown"` for variants newer than the binding.
     pub kind: String,
+    /// Tag of the offending element.
     pub tag: String,
+    /// One-based line number where the error was detected.
     pub line: u32,
+    /// Human-readable rendering of the error.
     pub message: String,
 }
 
+/// Outcome of [`NativeMarkdown::validate`].
 #[napi(object)]
 pub struct ValidationReport {
+    /// `true` iff `errors` is empty.
     pub valid: bool,
+    /// Every failure detected, in document order.
     pub errors: Vec<ValidationError>,
 }
 
+/// One attribute constraint for [`TagSchemaShape`].
 #[napi(object)]
 pub struct AttrConstraintShape {
     /// `"string"`, `"enum"`, or `"regex"`.
     pub kind: String,
-    /// Values for `kind = "enum"`. Empty otherwise.
+    /// Allowed values for `kind = "enum"`. Empty/absent otherwise.
     pub values: Option<Vec<String>>,
-    /// Pattern for `kind = "regex"`. Empty otherwise.
+    /// Pattern body for `kind = "regex"`. Empty/absent otherwise.
     pub pattern: Option<String>,
+    /// `true` to fail validation when the attribute is missing.
     pub required: Option<bool>,
 }
 
+/// Per-tag schema declaration for [`NativeMarkdown::validate`].
 #[napi(object)]
 pub struct TagSchemaShape {
+    /// Attribute constraints keyed by attribute name.
     pub attrs: Option<HashMap<String, AttrConstraintShape>>,
+    /// Child tag names that must appear at least once.
     pub children_required: Option<Vec<String>>,
+    /// Additional child tag names allowed alongside the required ones.
     pub children_optional: Option<Vec<String>>,
+    /// When `true`, any child tag not in `children_required` /
+    /// `children_optional` is flagged as `unexpected_child`.
     pub children_exclusive: Option<bool>,
+    /// When `true`, the element must contain at least one non-whitespace
+    /// character of direct text content.
     pub content_required: Option<bool>,
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────
-
-#[napi]
-pub fn parse(source: String) -> Result<Markdown> {
-    marxml::parse(&source)
-        .map(|doc| Markdown::from_doc(&doc))
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))
-}
-
-#[napi]
-pub fn select(source: String, selector: String) -> Result<Vec<Element>> {
-    let doc = marxml::parse(&source)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    let sel = marxml::Selector::parse(&selector)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    Ok(doc.select(&sel).map(|e| Element::from_ref(&e)).collect())
-}
-
-#[napi]
-pub fn update_attrs(
-    source: String,
-    selector: String,
-    new_attrs: Vec<AttrUpdate>,
-) -> Result<String> {
-    let doc = marxml::parse(&source)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    let sel = marxml::Selector::parse(&selector)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    let pairs: Vec<(&str, &str)> = new_attrs
-        .iter()
-        .map(|a| (a.name.as_str(), a.value.as_str()))
-        .collect();
-    Ok(doc.update(&sel, &pairs))
-}
-
-#[napi]
-pub fn replace_content(source: String, selector: String, new_body: String) -> Result<String> {
-    let doc = marxml::parse(&source)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    let sel = marxml::Selector::parse(&selector)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    Ok(doc.replace_content(&sel, &new_body))
-}
-
-#[napi]
-pub fn replace_in_content(
-    source: String,
-    selector: String,
-    pattern: Either<String, RegExpShape>,
-    replacement: String,
-) -> Result<String> {
-    let doc = marxml::parse(&source)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    let sel = marxml::Selector::parse(&selector)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    let pattern_str = match pattern {
-        Either::A(s) => s,
-        Either::B(rx) => rx.source,
-    };
-    let re = Regex::new(&pattern_str)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    Ok(doc.replace_in(&sel, &re, &replacement))
-}
-
-/// Accepts a JS `RegExp` by destructuring its serializable fields.
+/// Optional flags for [`NativeMarkdown::to_xml`].
 #[napi(object)]
-pub struct RegExpShape {
-    pub source: String,
-    pub flags: Option<String>,
+pub struct ToXmlOpts {
+    /// When `true`, emit indented multi-line output. Default `false`.
+    pub pretty: Option<bool>,
+}
+
+// ─── The native handle ────────────────────────────────────────────────────
+
+/// Parsed-document handle. Construct via the top-level [`parse`] function.
+///
+/// This class is the napi-level handle; the JS factory at `marxml.mjs` wraps
+/// it so end users never call `new NativeMarkdown(...)` directly.
+#[napi]
+pub struct NativeMarkdown {
+    inner: marxml::Markdown,
 }
 
 #[napi]
-pub fn to_xml(source: String, pretty: Option<bool>) -> Result<String> {
-    let doc = marxml::parse(&source)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    let opts = if pretty.unwrap_or(false) {
-        marxml::SerializeOpts::pretty()
-    } else {
-        marxml::SerializeOpts::default()
-    };
-    Ok(doc.to_xml(&opts))
-}
+impl NativeMarkdown {
+    /// Original document source, byte-for-byte.
+    #[napi(getter)]
+    pub fn raw(&self) -> &str {
+        self.inner.raw()
+    }
 
-#[napi]
-pub fn to_json(source: String) -> Result<String> {
-    let doc = marxml::parse(&source)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    serde_json::to_string(&doc.to_json())
-        .map_err(|e| napi::Error::new(napi::Status::GenericFailure, e.to_string()))
-}
+    /// Materialized root elements of the document. Walks the parsed tree
+    /// each time it's accessed — cache the result on the JS side if you'll
+    /// re-read it.
+    #[napi(getter)]
+    pub fn elements(&self) -> Vec<Element> {
+        self.inner
+            .root_elements()
+            .map(|e| Element::from_ref(&e))
+            .collect()
+    }
 
-#[napi]
-#[allow(clippy::implicit_hasher)] // napi-rs requires concrete HashMap
-pub fn validate_schema(
-    source: String,
-    schema: HashMap<String, TagSchemaShape>,
-) -> Result<ValidationReport> {
-    let doc = marxml::parse(&source)
-        .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e.to_string()))?;
-    let schema = build_schema(schema);
-    let report = marxml::validate(&doc, &schema);
-    Ok(ValidationReport {
-        valid: report.is_valid(),
-        errors: report
-            .errors()
+    /// Run a selector against the document and return every matching element
+    /// in source order.
+    #[napi]
+    pub fn select(&self, selector: String) -> Result<Vec<Element>> {
+        let sel = parse_selector(&selector)?;
+        Ok(self
+            .inner
+            .select(&sel)
+            .map(|e| Element::from_ref(&e))
+            .collect())
+    }
+
+    /// Update or insert attributes on every element matching `selector`.
+    /// Returns the rewritten document. The handle is unchanged.
+    ///
+    /// Routes through the crate's fallible `try_update`; invalid XML
+    /// attribute names and duplicate keys surface as `napi::Error` with
+    /// `InvalidArg`, never as a panic.
+    #[napi]
+    pub fn update_attrs(&self, selector: String, new_attrs: Vec<AttrUpdate>) -> Result<String> {
+        let sel = parse_selector(&selector)?;
+        let pairs: Vec<(&str, &str)> = new_attrs
             .iter()
-            .map(|e| ValidationError {
-                kind: error_kind(e).to_string(),
-                tag: error_tag(e),
-                line: error_line(e),
-                message: e.to_string(),
-            })
-            .collect(),
-    })
+            .map(|a| (a.name.as_str(), a.value.as_str()))
+            .collect();
+        self.inner
+            .try_update(&sel, &pairs)
+            .map(|report| report.output)
+            .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+
+    /// Replace inner content verbatim. `new_body` is spliced as raw bytes —
+    /// `<` / `&` / `"` are NOT escaped. Use [`Self::replace_text`] for
+    /// untrusted text.
+    #[napi]
+    pub fn replace_content(&self, selector: String, new_body: String) -> Result<String> {
+        let sel = parse_selector(&selector)?;
+        Ok(self.inner.replace_content(&sel, &new_body))
+    }
+
+    /// Replace inner content with `new_text`, escaping `<` / `&` / `"`
+    /// before splicing. Safe for user-controlled strings.
+    #[napi]
+    pub fn replace_text(&self, selector: String, new_text: String) -> Result<String> {
+        let sel = parse_selector(&selector)?;
+        Ok(self.inner.replace_text(&sel, &new_text))
+    }
+
+    /// Run a regex `replace_all` over the inner content of matching
+    /// elements. `pattern` accepts either a plain string or a `RegExpShape`
+    /// (i.e. the destructured fields of a JS `RegExp`). JS regex flags
+    /// `i`/`m`/`s`/`x` are honored via Rust's `(?flags:…)` prefix; `g` is a
+    /// no-op (`replace_all` is global by default).
+    ///
+    /// `replacement` is verbatim text — `$1` / `$name` are NOT interpreted as
+    /// capture references.
+    #[napi]
+    pub fn replace_in_content(
+        &self,
+        selector: String,
+        pattern: Either<String, RegExpShape>,
+        replacement: String,
+    ) -> Result<String> {
+        let sel = parse_selector(&selector)?;
+        let re = compile_regex(pattern)?;
+        Ok(self.inner.replace_in(&sel, &re, &replacement))
+    }
+
+    /// Serialize the parsed XML elements back to a string. Surrounding
+    /// markdown prose is dropped — this is just the structured payload.
+    #[napi]
+    pub fn to_xml(&self, opts: Option<ToXmlOpts>) -> Result<String> {
+        let pretty = opts.and_then(|o| o.pretty).unwrap_or(false);
+        let serialize_opts = if pretty {
+            marxml::SerializeOpts::pretty()
+        } else {
+            marxml::SerializeOpts::default()
+        };
+        Ok(self.inner.to_xml(&serialize_opts))
+    }
+
+    /// Serialize the element tree as a JSON string. Top-level is an array of
+    /// root elements; see the crate docs for the per-element schema.
+    #[napi]
+    pub fn to_json(&self) -> Result<String> {
+        serde_json::to_string(&self.inner.to_json())
+            .map_err(|e| Error::new(Status::GenericFailure, e.to_string()))
+    }
+
+    /// Validate the document against `schema` (per-tag declarations keyed by
+    /// tag name). Returns a report with every violation.
+    ///
+    /// Schema construction routes through `try_build`; invalid regex
+    /// patterns, non-XML tag/attr names, and duplicate declarations surface
+    /// as `napi::Error` with `InvalidArg`.
+    #[napi]
+    #[allow(clippy::implicit_hasher)]
+    pub fn validate(&self, schema: HashMap<String, TagSchemaShape>) -> Result<ValidationReport> {
+        let schema = build_schema(schema)?;
+        let report = marxml::validate(&self.inner, &schema);
+        Ok(ValidationReport {
+            valid: report.is_valid(),
+            errors: report
+                .errors()
+                .iter()
+                .map(|e| ValidationError {
+                    kind: error_kind(e).to_string(),
+                    tag: error_tag(e),
+                    line: error_line(e),
+                    message: e.to_string(),
+                })
+                .collect(),
+        })
+    }
 }
 
-fn build_schema(input: HashMap<String, TagSchemaShape>) -> marxml::Schema {
+// ─── Top-level entry points ───────────────────────────────────────────────
+
+/// Parse a markdown + XML source string into a [`NativeMarkdown`] handle.
+/// Throws on malformed input.
+#[napi]
+pub fn parse(source: String) -> Result<NativeMarkdown> {
+    marxml::parse(&source)
+        .map(|inner| NativeMarkdown { inner })
+        .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+}
+
+// ─── Internal helpers ─────────────────────────────────────────────────────
+
+fn parse_selector(s: &str) -> Result<marxml::Selector> {
+    marxml::Selector::parse(s).map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+}
+
+fn compile_regex(pattern: Either<String, RegExpShape>) -> Result<Regex> {
+    let (source, flags) = match pattern {
+        Either::A(s) => (s, String::new()),
+        Either::B(rx) => (rx.source, rx.flags.unwrap_or_default()),
+    };
+    let mut builder = RegexBuilder::new(&source);
+    for ch in flags.chars() {
+        match ch {
+            'i' => {
+                builder.case_insensitive(true);
+            }
+            'm' => {
+                builder.multi_line(true);
+            }
+            's' => {
+                builder.dot_matches_new_line(true);
+            }
+            'x' => {
+                builder.ignore_whitespace(true);
+            }
+            // JS-only flags that have no Rust equivalent or are implicit.
+            'g' | 'u' | 'y' | 'd' => {}
+            other => {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("unsupported regex flag: {other:?}"),
+                ));
+            }
+        }
+    }
+    builder
+        .build()
+        .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+}
+
+fn build_schema(input: HashMap<String, TagSchemaShape>) -> Result<marxml::Schema> {
     let mut builder = marxml::Schema::builder();
     for (tag_name, shape) in input {
         builder = builder.tag(&tag_name, |mut tb| {
             if let Some(attrs) = shape.attrs {
                 for (name, c) in attrs {
+                    // Unknown kinds default to `String` to stay
+                    // forward-compatible with future binding versions.
                     let kind = match c.kind.as_str() {
                         "enum" => marxml::schema::AttrKind::Enum(c.values.unwrap_or_default()),
                         "regex" => marxml::schema::AttrKind::Regex(c.pattern.unwrap_or_default()),
@@ -277,7 +409,9 @@ fn build_schema(input: HashMap<String, TagSchemaShape>) -> marxml::Schema {
             tb
         });
     }
-    builder.build()
+    builder
+        .try_build()
+        .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
 }
 
 fn error_kind(e: &marxml::ValidationError) -> &'static str {
@@ -288,7 +422,7 @@ fn error_kind(e: &marxml::ValidationError) -> &'static str {
         marxml::ValidationError::UnexpectedChild { .. } => "unexpected_child",
         marxml::ValidationError::EmptyContent { .. } => "empty_content",
         // `ValidationError` is `#[non_exhaustive]`; future variants surface
-        // with a generic kind until the bindings catch up.
+        // as `"unknown"` until the binding catches up.
         _ => "unknown",
     }
 }
