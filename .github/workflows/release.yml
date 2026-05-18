@@ -11,6 +11,10 @@ name: Release
 on:
   push:
     branches: [main]
+  # Manual dispatch so we can re-trigger the pipeline against a release
+  # commit already on `main` (e.g. after fixing a runner/image issue) without
+  # going through another revert/re-merge cycle.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -30,7 +34,7 @@ jobs:
   version-sync:
     name: Version sync gate
     runs-on: ubuntu-latest
-    if: "${{ startsWith(github.event.head_commit.message, 'chore: release ') }}"
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'chore: release ') }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -51,9 +55,13 @@ jobs:
         # `bindings/node/package.json#napi.targets` once npm support unblocks
         # the name. See contributing/release.md.
         include:
-          - host: macos-14
+          # Both macOS targets build on Apple Silicon — rustup adds the
+          # x86_64 target and rustc cross-compiles to it natively. macos-13
+          # (Intel x64 image) is being deprecated and routinely sits in the
+          # runner queue.
+          - host: macos-latest
             target: aarch64-apple-darwin
-          - host: macos-13
+          - host: macos-latest
             target: x86_64-apple-darwin
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
