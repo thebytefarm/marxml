@@ -45,6 +45,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Windows (`x86_64-pc-windows-msvc`) is temporarily disabled — the
+        # `marxml-win32-x64-msvc` name reservation was blocked by npm spam
+        # detection on first publish. Re-enable here + in
+        # `bindings/node/package.json#napi.targets` once npm support unblocks
+        # the name. See contributing/release.md.
         include:
           - host: macos-14
             target: aarch64-apple-darwin
@@ -58,8 +63,6 @@ jobs:
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             use_cross: true
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.host }}
     defaults:
       run:
@@ -132,7 +135,7 @@ jobs:
         run: pnpm exec napi version
       # `napi pre-publish` shells out to `npm publish` per sub-package and
       # inherits process.env, so NPM_CONFIG_PROVENANCE flips provenance on for
-      # all six platform packages in one stroke. No NPM_TOKEN — auth is OIDC.
+      # every platform package in one stroke. No NPM_TOKEN — auth is OIDC.
       - name: Publish per-platform packages
         run: pnpm exec napi pre-publish -t npm --skip-gh-release
         env:
@@ -141,9 +144,17 @@ jobs:
         run: npm publish --access public
         env:
           NPM_CONFIG_PROVENANCE: "true"
+      # crates.io trusted publishing: the auth action mints a short-lived
+      # token via the same GH OIDC flow npm uses. No CARGO_REGISTRY_TOKEN
+      # secret needed. Config is at https://crates.io/crates/marxml/settings.
+      - name: Mint crates.io token (OIDC)
+        uses: rust-lang/crates-io-auth-action@v1
+        id: cargo-auth
       - name: Publish crates.io
         working-directory: .
-        run: cargo publish -p marxml --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: cargo publish -p marxml
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.cargo-auth.outputs.token }}
 
   # ─── 4. Tag ───────────────────────────────────────────────────────────────
   # Runs only after publish succeeds. The tag is the receipt: if `vX.Y.Z`

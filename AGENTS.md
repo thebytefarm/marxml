@@ -102,7 +102,7 @@ marxml/
 │       ├── marxml.d.ts                   # Public TS API (MarkdownDoc interface + JSDoc)
 │       ├── index.js / index.d.ts         # napi-rs raw output. NOT the public API
 │       ├── __test__/                     # vitest binding tests
-│       ├── npm/<target>/                 # per-platform binary sub-packages (6 platforms)
+│       ├── npm/<target>/                 # per-platform binary sub-packages (5 platforms; win32 dir kept but disabled)
 │       └── package.json                  # npm metadata + napi target list
 ├── docs/
 │   ├── ARCHITECTURE.md                   # Tokenizer state machine, two-track API, mutation strategy
@@ -208,7 +208,7 @@ git commit -m "refactor: tighten Rust idioms across the crate"
 Two workflows, chained. **Read this before touching anything version-related.**
 
 1. **`release-pr.yml`** runs on push to `main` (or manual dispatch with `prerelease=rc`). Knope aggregates `.changeset/*.md`, bumps `Cargo.toml` + `bindings/node/package.json` + the six `npm/*/package.json` files, prepends a new `CHANGELOG.md` section, deletes the consumed changesets, and opens a `chore: release X.Y.Z` PR.
-2. **`release.yml`** runs when the release PR merges (detected by the `chore: release ` commit subject). Version-sync gate → cross-compile napi bindings for 6 platforms → publish per-platform npm sub-packages → publish main npm package (with provenance) → publish the crate to crates.io → tag the commit `vX.Y.Z`. **The tag is created last**: if it exists, all artifacts shipped; if publish fails partway, no tag is created and you fix forward with another changeset rather than trying to recover the partial version.
+2. **`release.yml`** runs when the release PR merges (detected by the `chore: release ` commit subject). Version-sync gate → cross-compile napi bindings for each supported platform → publish per-platform npm sub-packages → publish main npm package (with provenance) → publish the crate to crates.io → tag the commit `vX.Y.Z`. **The tag is created last**: if it exists, all artifacts shipped; if publish fails partway, no tag is created and you fix forward with another changeset rather than trying to recover the partial version.
 
 **Two secrets needed**: `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`. Both set at the repo level.
 

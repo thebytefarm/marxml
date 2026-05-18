@@ -19,7 +19,7 @@
 - **Find tags with selectors.** `task[id^="4."]`, `phase > task`, `note:not([archived])` — the CSS subset you already know.
 - **Edit surgically.** Change an attribute or replace inner content. Every byte you didn't touch comes back identical: prose, whitespace, comments, ordering.
 - **Validate the shape.** Required attributes, enum/regex constraints, child rules — declarative schema, structured errors with line numbers.
-- **Fast on both sides.** Native speed in Node via prebuilt binaries for macOS, Linux, and Windows.
+- **Fast on both sides.** Native speed in Node via prebuilt binaries for macOS and Linux. Windows support is pending — see [release notes](./contributing/release.md#platform-coverage).
 
 ## Why?
 

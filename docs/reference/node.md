@@ -174,7 +174,8 @@ Every method that can fail throws a standard `Error` with `code: 'InvalidArg'`. 
   | Linux x64 (glibc)       | `marxml-linux-x64-gnu`            |
   | Linux x64 (musl)        | `marxml-linux-x64-musl`           |
   | Linux arm64 (glibc)     | `marxml-linux-arm64-gnu`          |
-  | Windows x64 (MSVC)      | `marxml-win32-x64-msvc`           |
+
+  Windows (`marxml-win32-x64-msvc`) is **pending** — the name reservation was blocked by npm spam detection; tracked in [contributing/release.md → Platform coverage](../../contributing/release.md#platform-coverage).
 
   If the matching sub-package isn't picked up by npm (a known [npm optional-deps bug](https://github.com/npm/cli/issues/4828)): `rm -rf node_modules package-lock.json && npm i`.
 

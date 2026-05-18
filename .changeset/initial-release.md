@@ -49,6 +49,6 @@ doc.validate({ task: { attrs: { id: { kind: 'string', required: true } } } });
 - Serialization: `to_xml` (tight + pretty) / `to_json`.
 - Validation: declarative schema, `AttrKind::{String, Enum, Regex}`, required/optional attrs + children, exclusive-children, content-required.
 - Node binding: factory API, no per-call reparse, JS RegExp flags preserved (`imsx`), errors never panic the host.
-- 6 napi targets prebuilt: darwin-{arm64,x64}, linux-{x64-gnu,x64-musl,arm64-gnu}, win32-x64-msvc.
+- 5 napi targets prebuilt: darwin-{arm64,x64}, linux-{x64-gnu,x64-musl,arm64-gnu}. Windows (`win32-x64-msvc`) pending an npm spam-detection unblock — see contributing/release.md.
 - Docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/dsl/` (selectors + schema + grammar + cookbook), `docs/reference/{rust,node}.md`.
 - License: MIT OR Apache-2.0.

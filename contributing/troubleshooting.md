@@ -72,7 +72,7 @@ Things that go wrong in the release pipeline. Background → [contributing/relea
 
 1. **Workflow filename mismatch.** npmjs.com trusted publisher config wants the exact filename `release.yml`. If you typed `Release.yml`, `release.yaml`, or `.github/workflows/release.yml`, fix it. Case-sensitive.
 2. **Environment mismatch.** If the publisher config has an Environment value set (e.g. `release`) but the `publish` job has no `environment:` key (or vice versa), OIDC validation fails. Make them agree, or clear both.
-3. **Package not configured.** All 7 packages need their own trusted publisher entry on npmjs.com. The error mentions which package failed. Re-run `./scripts/reserve-npm-names.sh` if a name doesn't exist; configure trusted publishing if it exists but is unconfigured.
+3. **Package not configured.** Every published package (main `marxml` + each platform sub-package) needs its own trusted publisher entry on npmjs.com. The error mentions which package failed. Re-run `./scripts/reserve-npm-names.sh` if a name doesn't exist; configure trusted publishing if it exists but is unconfigured.
 4. **npm version too old.** Trusted publishing needs npm ≥ 11.5.1. `release.yml` runs `npm install -g npm@latest` before publishing. If you removed that step, restore it.
 5. **`id-token: write` missing.** Same fix as the provenance failure above.
 

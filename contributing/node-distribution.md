@@ -2,9 +2,9 @@
 
 How the `marxml` npm package actually ships — what gets uploaded to the registry, what lands on a user's machine, and what `@napi-rs/cli` mutates at publish time. Background → [contributing/release.md](./release.md). When publishing fails → [troubleshooting.md → Release](./troubleshooting.md#release).
 
-## The 7-package split
+## The split-package model
 
-`marxml` publishes seven npm packages, but a user only downloads two of them.
+`marxml` publishes one main package plus one binary-only package per supported platform. A user only downloads two of them — the main package + their platform's binary.
 
 | Package                  | Contents                                                                | Audience               |
 | ------------------------ | ----------------------------------------------------------------------- | ---------------------- |
@@ -14,11 +14,12 @@ How the `marxml` npm package actually ships — what gets uploaded to the regist
 | `marxml-linux-arm64-gnu` | `marxml.linux-arm64-gnu.node` only                                      | Linux arm64 glibc      |
 | `marxml-linux-x64-gnu`   | `marxml.linux-x64-gnu.node` only                                        | Linux x64 glibc        |
 | `marxml-linux-x64-musl`  | `marxml.linux-x64-musl.node` only                                       | Alpine / musl          |
-| `marxml-win32-x64-msvc`  | `marxml.win32-x64-msvc.node` only                                       | Windows x64            |
 
-**Why split?** The alternative is shipping one fat `marxml` package containing all six `.node` binaries (~420 KB). Every install drags binaries for five platforms the user will never use. The split puts each platform's binary in its own package, ~70 KB, and npm's `optionalDependencies` resolver pulls in only the one matching the install machine.
+Currently 6 packages (1 main + 5 platforms). Windows (`marxml-win32-x64-msvc`) is temporarily disabled pending an npm spam-detection unblock on the name — see [release.md → Platform coverage](./release.md#platform-coverage) for the re-enable path. The `bindings/node/npm/win32-x64-msvc/` directory remains on disk for that purpose.
 
-The six platforms above are pinned by `bindings/node/package.json#napi.targets`. Adding a target is an [Ask First](../AGENTS.md#ask-first) action — it requires a new `bindings/node/npm/<target>/package.json` sub-package, a matching CI matrix entry in `.github/workflows/release.yml`, and a trusted publisher config on npmjs.com.
+**Why split?** The alternative is shipping one fat `marxml` package containing every `.node` binary. Every install drags binaries for platforms the user will never use. The split puts each platform's binary in its own ~70 KB package, and npm's `optionalDependencies` resolver pulls in only the one matching the install machine.
+
+The supported platforms are pinned by `bindings/node/package.json#napi.targets`. Adding a target is an [Ask First](../AGENTS.md#ask-first) action — it requires a new `bindings/node/npm/<target>/package.json` sub-package, a matching CI matrix entry in `.github/workflows/release.yml`, and a trusted publisher config on npmjs.com.
 
 ## Anatomy of each package
 
@@ -89,8 +90,7 @@ Despite the name, this command does more than "prepare." Two things happen, in t
   "marxml-darwin-x64": "<version>",
   "marxml-linux-arm64-gnu": "<version>",
   "marxml-linux-x64-gnu": "<version>",
-  "marxml-linux-x64-musl": "<version>",
-  "marxml-win32-x64-msvc": "<version>"
+  "marxml-linux-x64-musl": "<version>"
 }
 ```
 
@@ -106,7 +106,7 @@ That block is **not in git** — it's synthesized from `napi.targets` every rele
 npm install marxml
 ```
 
-1. npm fetches the main `marxml` package manifest. That manifest (the registry's view, not the source) has the `optionalDependencies` block listing the six platform packages.
+1. npm fetches the main `marxml` package manifest. That manifest (the registry's view, not the source) has the `optionalDependencies` block listing every supported-platform package.
 2. For each optional dep, npm reads the platform package's `os` and `cpu` fields from the registry. A package whose constraints don't match the current machine is **silently skipped** — that's the entire point of `optionalDependencies` versus `dependencies`.
 3. npm downloads the one matching package. An Apple-Silicon user ends up with:
    ```
@@ -220,7 +220,7 @@ If you `cat bindings/node/package.json` from a fresh checkout, you'll see no `op
 
 ### Provenance scope
 
-`npm publish --provenance` works on any package published from an OIDC-enabled CI. `release.yml` sets `NPM_CONFIG_PROVENANCE: true` as an env var on both publish steps, so provenance covers all 7 packages: the main `marxml` (via the direct `npm publish`), and the six platform sub-packages (via `napi pre-publish`, which inherits `process.env` when shelling out to `npm publish` per target).
+`npm publish --provenance` works on any package published from an OIDC-enabled CI. `release.yml` sets `NPM_CONFIG_PROVENANCE: true` as an env var on both publish steps, so provenance covers every package: the main `marxml` (via the direct `npm publish`), and each platform sub-package (via `napi pre-publish`, which inherits `process.env` when shelling out to `npm publish` per target).
 
 ### Version mismatch between main and platform packages
 

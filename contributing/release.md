@@ -33,7 +33,7 @@ Use `major` for breaking changes (pre-1.0 too; that's how you cross `0.x` bounda
 Two workflows, chained:
 
 1. **`release-pr.yml`** runs on push to `main` when any `.changeset/`, `Cargo.toml`, or `bindings/node/package.json` change lands. Knope aggregates pending changesets, bumps versions, prepends a new `CHANGELOG.md` section, deletes the consumed changesets, and opens a `chore: release X.Y.Z` PR on a `release/X.Y.Z` branch.
-2. **`release.yml`** runs when the release PR merges (detected by the `chore: release ` commit subject). Pipeline: version-sync gate → cross-compile napi bindings for 6 platforms → publish per-platform npm sub-packages → publish main npm package (with provenance) → publish crate to crates.io → tag `vX.Y.Z`.
+2. **`release.yml`** runs when the release PR merges (detected by the `chore: release ` commit subject). Pipeline: version-sync gate → cross-compile napi bindings for each supported platform → publish per-platform npm sub-packages → publish main npm package (with provenance) → publish crate to crates.io → tag `vX.Y.Z`.
 
 The tag is the receipt. If `vX.Y.Z` exists on the repo, every artifact for that version shipped. If `release.yml` fails partway (build matrix flake, registry hiccup, etc.) no tag is created. See [troubleshooting → "publish failed partway"](./troubleshooting.md#release-yml-failed-after-some-artifacts-published) for how to recover.
 
@@ -76,13 +76,13 @@ The first is set via API. The second isn't reliably exposed by the API. Check it
 
 ### npm trusted publishing (one-time)
 
-All seven npm packages (`marxml` + the six platform sub-packages) use trusted publishing. Setup is per-package and one-time.
+Six npm packages (`marxml` + five platform sub-packages) use trusted publishing. Setup is per-package and one-time. The Windows sub-package is temporarily out of scope — see [Platform coverage](#platform-coverage).
 
-**Step 1 — reserve the platform sub-package names.** The main `marxml` already exists at `0.0.0` on npm. The six platform sub-packages don't yet, and trusted publishing can't be configured on a package that doesn't exist. Use the bundled script:
+**Step 1 — reserve the platform sub-package names.** The main `marxml` already exists at `0.0.0` on npm. The five platform sub-packages don't yet, and trusted publishing can't be configured on a package that doesn't exist. Use the bundled script:
 
 ```sh
 # Get a 24h granular token at https://www.npmjs.com/settings/<user>/tokens
-# Scope: read+publish on each of the six marxml-<target> names.
+# Scope: read+publish on each of the five marxml-<target> names.
 npm login
 
 ./scripts/reserve-npm-names.sh
@@ -90,9 +90,9 @@ npm login
 # Revoke the token immediately after. You won't need it again.
 ```
 
-The script publishes a 0-byte placeholder to each of the six names. Idempotent. Re-running on a name that's already at `0.0.0` is a no-op.
+The script publishes a 0-byte placeholder to each of the five names. Idempotent. Re-running on a name that's already at `0.0.0` is a no-op.
 
-**Step 2 — configure trusted publishing on each of the 7 packages.** For each settings page (the script prints the URLs):
+**Step 2 — configure trusted publishing on each of the 6 packages.** For each settings page (the script prints the URLs):
 
 - <https://www.npmjs.com/package/marxml/access>
 - <https://www.npmjs.com/package/marxml-darwin-arm64/access>
@@ -100,7 +100,6 @@ The script publishes a 0-byte placeholder to each of the six names. Idempotent. 
 - <https://www.npmjs.com/package/marxml-linux-arm64-gnu/access>
 - <https://www.npmjs.com/package/marxml-linux-x64-gnu/access>
 - <https://www.npmjs.com/package/marxml-linux-x64-musl/access>
-- <https://www.npmjs.com/package/marxml-win32-x64-msvc/access>
 
 Add a trusted publisher with:
 
@@ -110,7 +109,19 @@ Add a trusted publisher with:
 - **Workflow filename:** `release.yml`
 - **Environment:** leave blank (or set `release` only if you also create a GitHub Actions environment by that name. See [Manual approval gate](#manual-approval-gate-optional))
 
-`release.yml` has `id-token: write` and runs `npm install -g npm@latest` before publishing, so the npm CLI auto-detects OIDC. `NPM_CONFIG_PROVENANCE: true` is set on both publish steps so all 7 packages ship with provenance.
+`release.yml` has `id-token: write` and runs `npm install -g npm@latest` before publishing, so the npm CLI auto-detects OIDC. `NPM_CONFIG_PROVENANCE: true` is set on both publish steps so all 6 packages ship with provenance.
+
+### Platform coverage
+
+Currently five platform sub-packages — macOS (arm64, x64) and Linux (x64-gnu, x64-musl, arm64-gnu). Windows (`marxml-win32-x64-msvc`) is **temporarily disabled** because the name reservation was blocked by npm's spam-detection heuristic during the initial burst publish. The block is name-shape based (the canonical napi-rs `<pkg>-<platform>-<arch>-<abi>` pattern from a new account) — not anything we can fix in code.
+
+Path to re-enable:
+
+1. Open a support ticket at <https://www.npmjs.com/support> asking npm to publish `marxml-win32-x64-msvc@0.0.0` and transfer write access to your account. There's clear precedent ([Node-RED forum case](https://discourse.nodered.org/t/problems-with-npm-publish-why-is-my-node-spam/40229)) — same-week turnaround.
+2. Once unblocked, restore `x86_64-pc-windows-msvc` to `bindings/node/package.json#napi.targets` and the matching matrix entry in `.github/workflows/release.yml#jobs.build.strategy.matrix.include`.
+3. Configure trusted publishing on the new package's settings page (<https://www.npmjs.com/package/marxml-win32-x64-msvc/access>) with the same owner/repo/workflow values as the other five.
+
+The `bindings/node/npm/win32-x64-msvc/` directory is intentionally kept on disk — re-enabling Windows is a 2-line config change once the name is unblocked.
 
 ### Trusted publishing on crates.io
 
@@ -122,7 +133,7 @@ For extra safety, gate the `publish` job behind a GitHub Actions environment wit
 
 1. Settings → Environments → New environment → `release`. Add yourself as required reviewer; restrict deployments to `main`.
 2. Add `environment: release` to the `publish` job in `release.yml`.
-3. Add `release` as the **Environment** value in each of the 7 npm trusted publisher configs and the crates.io one.
+3. Add `release` as the **Environment** value in each of the 6 npm trusted publisher configs and the crates.io one.
 
 Every release will pause for your one-click approval before any registry call. Recommended once the repo has more than one publisher.
 

@@ -18,7 +18,7 @@
 - **Find tags with selectors.** `task[id^="4."]`, `phase > task`, `note:not([archived])` — the CSS subset you already know.
 - **Edit surgically.** Change an attribute or replace inner content. Every byte you didn't touch comes back identical: prose, whitespace, comments, ordering.
 - **Validate the shape.** Required attributes, enum/regex constraints, child rules — declarative schema, structured errors with line numbers.
-- **Native speed.** Prebuilt `.node` binaries for macOS (arm64, x64), Linux (x64-gnu, x64-musl, arm64-gnu), and Windows (x64-msvc). No build step.
+- **Native speed.** Prebuilt `.node` binaries for macOS (arm64, x64) and Linux (x64-gnu, x64-musl, arm64-gnu). No build step. Windows support is pending — track [the repo](https://github.com/thebytefarm/marxml).
 
 ## Why?
 
