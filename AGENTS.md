@@ -210,7 +210,7 @@ Two workflows, chained. **Read this before touching anything version-related.**
 1. **`release-pr.yml`** runs on push to `main` (or manual dispatch with `prerelease=rc`). Knope aggregates `.changeset/*.md`, bumps `Cargo.toml` + `bindings/node/package.json` + the six `npm/*/package.json` files, prepends a new `CHANGELOG.md` section, deletes the consumed changesets, and opens a `chore: release X.Y.Z` PR.
 2. **`release.yml`** runs when the release PR merges (detected by the `chore: release ` commit subject). Version-sync gate → cross-compile napi bindings for each supported platform → publish per-platform npm sub-packages → publish main npm package (with provenance) → publish the crate to crates.io → tag the commit `vX.Y.Z`. **The tag is created last**: if it exists, all artifacts shipped; if publish fails partway, no tag is created and you fix forward with another changeset rather than trying to recover the partial version.
 
-**Two secrets needed**: `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`. Both set at the repo level.
+**No long-lived registry secrets.** Both npm and crates.io use trusted publishing (OIDC). See `contributing/release.md` for the setup.
 
 ## Adding things
 

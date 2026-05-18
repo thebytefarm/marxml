@@ -21,7 +21,7 @@ jobs:
     # CODSPEED_TOKEN is set in repo settings, this job runs automatically.
     if: ${{ vars.CODSPEED_ENABLED == 'true' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -30,7 +30,7 @@ jobs:
       - name: Build benches
         run: cargo codspeed build --workspace
       - name: Run CodSpeed benchmarks
-        uses: CodSpeedHQ/action@v3
+        uses: CodSpeedHQ/action@v4
         with:
           run: cargo codspeed run --workspace
           token: ${{ secrets.CODSPEED_TOKEN }}

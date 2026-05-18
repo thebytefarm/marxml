@@ -53,26 +53,23 @@ To force a specific version, knope supports `--override-version 0.1.0-rc.0` (onl
 
 ## Secrets and permissions (one-time setup)
 
-npm publishing uses **trusted publishing** (OIDC, no long-lived token). crates.io uses a scoped API token for now — see [trusted publishing on crates.io](#trusted-publishing-on-cratesio) for the migration path.
-
-### One repo secret
-
-| Secret                 | Where to get it                                                                              |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| `CARGO_REGISTRY_TOKEN` | crates.io → Account Settings → API Tokens → "New Token" (`publish-update` scope on `marxml`) |
-
-```sh
-gh secret set CARGO_REGISTRY_TOKEN --repo thebytefarm/marxml
-```
+Both registries use **trusted publishing** (OIDC). No long-lived tokens in repo secrets. See [npm trusted publishing](#npm-trusted-publishing-one-time) and [crates.io trusted publishing](#trusted-publishing-on-cratesio) below.
 
 ### GitHub Actions permissions
 
-Settings → Actions → General → Workflow permissions:
+Two settings need to be on, both at the **org level** (`thebytefarm`) for the repo-level toggles to stick:
 
-- ☑ Read and write permissions
-- ☑ Allow GitHub Actions to create and approve pull requests
+- ☑ Read and write permissions for workflows (org → Settings → Actions → General → Workflow permissions)
+- ☑ Allow GitHub Actions to create and approve pull requests (same page)
 
-The first is set via API. The second isn't reliably exposed by the API. Check it manually in the UI before the first release.
+Once those are on at the org, the repo-level page (Settings → Actions → General → Workflow permissions) inherits. Verify with:
+
+```sh
+gh api repos/thebytefarm/marxml/actions/permissions/workflow
+# Expect: { "default_workflow_permissions": "write", "can_approve_pull_request_reviews": true }
+```
+
+`release-pr.yml` needs both — without write perms knope can't push the release branch; without PR-approval it can't open the PR.
 
 ### npm trusted publishing (one-time)
 
@@ -125,7 +122,7 @@ The `bindings/node/npm/win32-x64-msvc/` directory is intentionally kept on disk 
 
 ### Trusted publishing on crates.io
 
-Same OIDC model, set up at <https://crates.io/crates/marxml/settings> → Trusted Publishers. Owner `thebytefarm`, repo `marxml`, workflow `release.yml`. Once enabled, replace the `cargo publish` step in `release.yml` with `rust-lang/crates-io-auth-action@v1` + a token-less `cargo publish`, and delete `CARGO_REGISTRY_TOKEN`. Pending. Track it.
+Enabled. Same OIDC model as npm. Configured at <https://crates.io/crates/marxml/settings> → Trusted Publishers (owner `thebytefarm`, repo `marxml`, workflow `release.yml`). `release.yml` uses `rust-lang/crates-io-auth-action@v1.0.4` to mint a short-lived token via OIDC, then runs `cargo publish` with that token in `CARGO_REGISTRY_TOKEN`. No long-lived registry secret in the repo.
 
 ### Manual approval gate (optional)
 

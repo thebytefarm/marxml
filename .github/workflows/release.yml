@@ -32,8 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     if: "${{ startsWith(github.event.head_commit.message, 'chore: release ') }}"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - run: ./scripts/check-versions.sh
@@ -68,17 +68,17 @@ jobs:
       run:
         working-directory: bindings/node
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -92,7 +92,7 @@ jobs:
         if: ${{ !matrix.use_cross }}
         run: pnpm exec napi build --platform --release --target ${{ matrix.target }} --js-package-name marxml
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bindings-${{ matrix.target }}
           path: bindings/node/marxml.*.node
@@ -107,12 +107,12 @@ jobs:
       run:
         working-directory: bindings/node
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
@@ -126,7 +126,7 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Collect artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: bindings/node/artifacts
       - name: Move binaries into per-platform npm dirs
@@ -148,7 +148,7 @@ jobs:
       # token via the same GH OIDC flow npm uses. No CARGO_REGISTRY_TOKEN
       # secret needed. Config is at https://crates.io/crates/marxml/settings.
       - name: Mint crates.io token (OIDC)
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@v1.0.4
         id: cargo-auth
       - name: Publish crates.io
         working-directory: .
@@ -166,7 +166,7 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -176,7 +176,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Knope — release (create tag)
-        uses: knope-dev/action@v2
+        uses: knope-dev/action@v2.1.2
         with:
           command: release
         env:

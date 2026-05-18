@@ -35,7 +35,7 @@ jobs:
     name: Prepare release PR
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # knope needs full history to compute the bump
 
@@ -46,7 +46,7 @@ jobs:
 
       - name: Knope — prepare release (stable)
         if: ${{ inputs.prerelease == '' }}
-        uses: knope-dev/action@v2
+        uses: knope-dev/action@v2.1.2
         with:
           command: prepare-release
         env:
@@ -54,7 +54,7 @@ jobs:
 
       - name: Knope — prepare release (${{ inputs.prerelease }} prerelease)
         if: ${{ inputs.prerelease != '' }}
-        uses: knope-dev/action@v2
+        uses: knope-dev/action@v2.1.2
         with:
           command: prepare-release --prerelease-label ${{ inputs.prerelease }}
         env:
