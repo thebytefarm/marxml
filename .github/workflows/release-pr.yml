@@ -46,18 +46,20 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Knope — prepare release (stable)
-        if: ${{ inputs.prerelease == '' }}
+      # knope-dev/action@v2 is just an installer — it adds `knope` to PATH.
+      # Invoke knope yourself in subsequent steps. The old `with: command:`
+      # input is silently ignored as of v2.x.
+      - name: Install knope
         uses: knope-dev/action@v2.1.2
-        with:
-          command: prepare-release
+
+      - name: Knope prepare-release (stable)
+        if: ${{ inputs.prerelease == '' }}
+        run: knope prepare-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Knope — prepare release (${{ inputs.prerelease }} prerelease)
+      - name: Knope prepare-release (${{ inputs.prerelease }} prerelease)
         if: ${{ inputs.prerelease != '' }}
-        uses: knope-dev/action@v2.1.2
-        with:
-          command: prepare-release --prerelease-label ${{ inputs.prerelease }}
+        run: knope prepare-release --prerelease-label ${{ inputs.prerelease }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

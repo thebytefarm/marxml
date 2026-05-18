@@ -175,9 +175,11 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Knope — release (create tag)
+      # knope-dev/action@v2 is just an installer; invoke knope yourself.
+      - name: Install knope
         uses: knope-dev/action@v2.1.2
-        with:
-          command: release
+
+      - name: Knope release (create tag)
+        run: knope release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
