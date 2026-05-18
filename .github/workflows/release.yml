@@ -11,9 +11,6 @@ name: Release
 on:
   push:
     branches: [main]
-  # Manual dispatch so we can re-trigger the pipeline against a release
-  # commit already on `main` (e.g. after fixing a runner/image issue) without
-  # going through another revert/re-merge cycle.
   workflow_dispatch:
 
 permissions:
@@ -49,24 +46,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows (`x86_64-pc-windows-msvc`) is temporarily disabled — the
-        # `marxml-win32-x64-msvc` name reservation was blocked by npm spam
-        # detection on first publish. Re-enable here + in
-        # `bindings/node/package.json#napi.targets` once npm support unblocks
-        # the name. Tracked in npm support ticket #4396187. See
-        # contributing/release.md.
-        #
-        # Linux cross-compile mirrors the canonical napi-rs pattern
-        # (napi-rs/package-template + rolldown):
-        #   - glibc arm64 → `--use-napi-cross` (prebuilt sysroots from the
-        #     napi-rs/cross-toolchain releases; no Docker)
-        #   - musl        → `-x` (= cargo-zigbuild; zig-cc as the linker)
-        # The older `--use-cross` (Docker via cross-rs) is deprecated for
-        # napi-rs and was unreliable because of ghcr.io pull timeouts.
+        # Windows (`x86_64-pc-windows-msvc`) is disabled pending the npm
+        # spam-detection unblock on `marxml-win32-x64-msvc` (support ticket
+        # #4396187). Re-enable here + in `bindings/node/package.json#napi.targets`.
         include:
-          # macOS: both targets build on Apple Silicon. rustup adds the x86_64
-          # target and rustc cross-compiles natively. macos-13 (Intel x64
-          # image) is being deprecated and routinely sits in the runner queue.
           - host: macos-latest
             target: aarch64-apple-darwin
             build: pnpm exec napi build --platform --release --target aarch64-apple-darwin --js-package-name marxml
@@ -104,8 +87,6 @@ jobs:
           cache-dependency-path: bindings/node/pnpm-lock.yaml
       - name: Install
         run: pnpm install --frozen-lockfile
-      # musl-only: zig provides the linker; cargo-zigbuild wraps cargo to
-      # invoke zig-cc. SHA-pinned to match rolldown's supply-chain pattern.
       - name: Setup zig (musl only)
         if: ${{ contains(matrix.target, 'musl') }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
@@ -157,20 +138,14 @@ jobs:
         run: pnpm exec napi artifacts
       - name: Update per-platform package versions
         run: pnpm exec napi version
-      # `napi pre-publish` shells out to `npm publish` per sub-package and
-      # inherits process.env, so NPM_CONFIG_PROVENANCE flips provenance on for
-      # every platform package in one stroke. No NPM_TOKEN — auth is OIDC.
       - name: Publish per-platform packages
-        run: pnpm exec napi pre-publish -t npm --skip-gh-release
+        run: pnpm exec napi pre-publish -t npm
         env:
           NPM_CONFIG_PROVENANCE: "true"
       - name: Publish main npm package
         run: npm publish --access public
         env:
           NPM_CONFIG_PROVENANCE: "true"
-      # crates.io trusted publishing: the auth action mints a short-lived
-      # token via the same GH OIDC flow npm uses. No CARGO_REGISTRY_TOKEN
-      # secret needed. Config is at https://crates.io/crates/marxml/settings.
       - name: Mint crates.io token (OIDC)
         uses: rust-lang/crates-io-auth-action@v1.0.4
         id: cargo-auth
@@ -181,10 +156,6 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.cargo-auth.outputs.token }}
 
   # ─── 4. Tag ───────────────────────────────────────────────────────────────
-  # Runs only after publish succeeds. The tag is the receipt: if `vX.Y.Z`
-  # exists, all artifacts shipped. If publish fails partway, no tag is
-  # created — fix forward with another changeset, don't try to recover the
-  # half-published version.
   tag:
     name: Tag release
     needs: publish
@@ -199,7 +170,6 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      # knope-dev/action@v2 is just an installer; invoke knope yourself.
       - name: Install knope
         uses: knope-dev/action@v2.1.2
 
