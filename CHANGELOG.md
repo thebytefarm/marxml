@@ -34,6 +34,24 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 [Unreleased]: https://github.com/thebytefarm/marxml/compare/v0.0.0...HEAD
 [0.0.0]: https://github.com/thebytefarm/marxml/releases/tag/v0.0.0
+## 0.1.1 (2026-05-18)
+
+### Features
+
+- tokenizer + stack-based assembler (#2)
+- CSS-subset selectors + Markdown::select (#3)
+- update / replace_content / replace_in (#4)
+- to_xml, to_json, SerializeOpts + Display impls (#5)
+- declarative schema + validate() (#6)
+- napi-rs bindings (Phase 7) (#7)
+- cross-compile + CodSpeed (Phase 8) (#8)
+
+### Fixes
+
+- address Codex review findings (parser/mutator/serializer hardening) (#10)
+- quote release.yml `if:` expression so YAML parses
+- drop invalid `--skip-gh-release` from napi pre-publish
+
 ## 0.1.0 (2026-05-18)
 
 ### Breaking Changes
