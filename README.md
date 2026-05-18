@@ -18,11 +18,10 @@ The Rust API mirrors [`scraper`](https://github.com/rust-scraper/scraper) — th
 
 ## Features
 
-- **One pass, structured tree.** Hand-rolled state-machine tokenizer + stack-based assembler. No regex parsing — same-tag nesting works out of the box.
-- **CSS-subset selectors.** `task[id^="4."]`, `phase > task`, `*:nth-child(2)`, `:not(simple)`. Compiled once, reused across documents.
-- **Surgical mutation.** Three string-returning helpers — `update`, `replace_content`, `replace_in`. Untouched bytes are preserved verbatim.
-- **Validation.** Declarative schema with required/optional attributes, enum/regex constraints, required children, exclusive allowlists.
-- **Native everywhere.** Prebuilt `.node` binaries for macOS (arm64, x64), Linux (x64-gnu, x64-musl, arm64-gnu), and Windows (x64-msvc).
+- **Extract data from XML tags inside markdown** — prompts, model output, plan docs. CSS-style selectors (`task[id^="4."]`, `phase > task`) find exactly the tag you want.
+- **Update XML in markdown without relying on the LLM** to parse or edit it. Surgical helpers change attributes or content; every other byte is preserved verbatim.
+- **Validate what came back** against a declarative schema — required/optional attributes, enum/regex constraints, required children, exclusive allowlists.
+- **Built for speed.** Rust core with single-pass parsing and compiled selectors. Node gets the same performance through prebuilt native bindings via [napi-rs](https://napi.rs/) — macOS (arm64, x64), Linux (x64-gnu, x64-musl, arm64-gnu), Windows (x64-msvc).
 
 ## Install
 
@@ -115,9 +114,9 @@ Sibling combinators (`~`, `+`), `:has()`, `:contains()`, and case-insensitive fl
 
 ## Why?
 
-Markdown is the lingua franca of LLM output. XML is what models reach for when they need structure inside it. The result is a hybrid the existing tooling fits poorly: markdown parsers flatten the tags into HTML, XML parsers choke on the surrounding prose, and ad-hoc regex collapses the moment tags nest.
+`marxml` started as plumbing for a workflow agent — plan and phase-planning documents (think GSD-style trackers) stored as markdown with task state inside XML tags. Agents needed to update those tags reliably: flip a status, append a note, mark a child done — without rewriting the surrounding prose or hallucinating new structure.
 
-`marxml` treats the hybrid as the primary format. One tokenizer pass produces a typed tree you can query with CSS-subset selectors and mutate with byte-preserving string splices. Same shape in Rust and Node, same selectors, same semantics.
+The general lesson: LLMs drift at the prose level but stay disciplined inside known XML tags. Scope the model's output to a tag, and the read/write boundary becomes deterministic again. `marxml` is the read/write layer for that boundary — selectors to find tags, byte-preserving mutation to change them, schema to verify what came back. Same shape in Rust and Node.
 
 ## How it works
 
