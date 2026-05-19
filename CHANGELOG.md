@@ -34,6 +34,12 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 [Unreleased]: https://github.com/thebytefarm/marxml/compare/v0.0.0...HEAD
 [0.0.0]: https://github.com/thebytefarm/marxml/releases/tag/v0.0.0
+## 0.1.2 (2026-05-19)
+
+### Fixes
+
+- include index.js and index.d.ts in the main npm tarball
+
 ## 0.1.1 (2026-05-19)
 
 ### Fixes
