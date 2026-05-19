@@ -52,19 +52,19 @@ jobs:
         include:
           - host: macos-latest
             target: aarch64-apple-darwin
-            build: pnpm exec napi build --platform --release --target aarch64-apple-darwin --js-package-name marxml
+            build: pnpm exec napi build --platform --release --target aarch64-apple-darwin --esm --js-package-name marxml
           - host: macos-latest
             target: x86_64-apple-darwin
-            build: pnpm exec napi build --platform --release --target x86_64-apple-darwin --js-package-name marxml
+            build: pnpm exec napi build --platform --release --target x86_64-apple-darwin --esm --js-package-name marxml
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            build: pnpm exec napi build --platform --release --target x86_64-unknown-linux-gnu --js-package-name marxml
+            build: pnpm exec napi build --platform --release --target x86_64-unknown-linux-gnu --esm --js-package-name marxml
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            build: pnpm exec napi build --platform --release --target x86_64-unknown-linux-musl --js-package-name marxml -x
+            build: pnpm exec napi build --platform --release --target x86_64-unknown-linux-musl --esm --js-package-name marxml -x
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            build: pnpm exec napi build --platform --release --target aarch64-unknown-linux-gnu --js-package-name marxml --use-napi-cross
+            build: pnpm exec napi build --platform --release --target aarch64-unknown-linux-gnu --esm --js-package-name marxml --use-napi-cross
     runs-on: ${{ matrix.host }}
     defaults:
       run:
@@ -157,6 +157,22 @@ jobs:
           path: bindings/node/
       - name: Move binaries into per-platform npm dirs
         run: pnpm exec napi artifacts
+      # Catch packaging regressions (ESM/CJS mismatch, missing files, broken
+      # loader chain) before anything ships to a registry. Points the loader
+      # at the linux-x64-gnu binary on the runner via NAPI_RS_NATIVE_LIBRARY_PATH.
+      - name: Smoke test the assembled package
+        env:
+          NAPI_RS_NATIVE_LIBRARY_PATH: ${{ github.workspace }}/bindings/node/npm/linux-x64-gnu/marxml.linux-x64-gnu.node
+        run: |
+          node --input-type=module -e "
+            import('./marxml.mjs').then(m => {
+              if (typeof m.parse !== 'function') throw new Error('parse is not a function');
+              const doc = m.parse('<x id=\"1\"/>');
+              if (typeof doc.raw !== 'string') throw new Error('parse returned bad shape');
+              if (typeof doc.select !== 'function') throw new Error('select missing on doc');
+              console.log('smoke test passed: parse + doc.raw + doc.select all live');
+            }).catch(e => { console.error(e); process.exit(1); });
+          "
       - name: Update per-platform package versions
         run: pnpm exec napi version
       - name: Publish per-platform packages
