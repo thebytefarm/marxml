@@ -9,7 +9,7 @@
 </div>
 
 > [!WARNING]
-> **Pre-release · under active development.** `marxml` is in the `0.0.x` placeholder phase — the name on npm is reserved, but the working API lands in `0.1.0`. APIs, types, and selector grammar will change without notice until then. Don't depend on it in production yet.
+> **Pre-1.0 · under active development.** `marxml` is on `0.x.y` and APIs, types, and selector grammar may still shift between minor versions. Not recommended for production yet — pin a specific version and read the changelog before bumping. Licensed MIT/Apache-2.0 (so it's always at your own risk anyway).
 
 `marxml` lets you read and write XML-shaped tags embedded in markdown documents. Find them with CSS-style selectors, change them surgically, validate they're well-formed — without rewriting the prose around them. Native speed in Node via prebuilt binaries.
 
