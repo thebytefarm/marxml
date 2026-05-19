@@ -198,3 +198,12 @@ jobs:
         run: knope release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Knope's GH release title format is hardcoded to "{version} ({date})".
+      # Strip the date — title becomes just the version.
+      - name: Strip date from GH release title
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          gh release edit "v$version" --title "$version"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
