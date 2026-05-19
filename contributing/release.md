@@ -114,7 +114,7 @@ Currently five platform sub-packages — macOS (arm64, x64) and Linux (x64-gnu, 
 
 Path to re-enable:
 
-1. Open a support ticket at <https://www.npmjs.com/support> asking npm to publish `marxml-win32-x64-msvc@0.0.0` and transfer write access to your account. There's clear precedent ([Node-RED forum case](https://discourse.nodered.org/t/problems-with-npm-publish-why-is-my-node-spam/40229)) — same-week turnaround.
+1. Open a support ticket at <https://www.npmjs.com/support> asking npm to publish `marxml-win32-x64-msvc@0.0.0` and transfer write access to your account. There's clear precedent ([Node-RED forum case](https://discourse.nodered.org/t/problems-with-npm-publish-why-is-my-node-spam/40229)) — same-week turnaround. Current ticket: **#4396187**.
 2. Once unblocked, restore `x86_64-pc-windows-msvc` to `bindings/node/package.json#napi.targets` and the matching matrix entry in `.github/workflows/release.yml#jobs.build.strategy.matrix.include`.
 3. Configure trusted publishing on the new package's settings page (<https://www.npmjs.com/package/marxml-win32-x64-msvc/access>) with the same owner/repo/workflow values as the other five.
 
