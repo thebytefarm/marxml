@@ -46,20 +46,35 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      # knope-dev/action@v2 is just an installer — it adds `knope` to PATH.
-      # Invoke knope yourself in subsequent steps. The old `with: command:`
-      # input is silently ignored as of v2.x.
       - name: Install knope
         uses: knope-dev/action@v2.1.2
 
       - name: Knope prepare-release (stable)
         if: ${{ inputs.prerelease == '' }}
-        run: knope prepare-release
+        shell: bash
+        run: |
+          set +e
+          knope prepare-release 2>&1 | tee /tmp/knope.out
+          status=${PIPESTATUS[0]}
+          if [[ $status -ne 0 ]] && grep -q "no_release\|No packages are ready" /tmp/knope.out; then
+            echo "::notice::Nothing to release — no changesets or qualifying commits"
+            exit 0
+          fi
+          exit $status
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Knope prepare-release (${{ inputs.prerelease }} prerelease)
         if: ${{ inputs.prerelease != '' }}
-        run: knope prepare-release --prerelease-label ${{ inputs.prerelease }}
+        shell: bash
+        run: |
+          set +e
+          knope prepare-release --prerelease-label ${{ inputs.prerelease }} 2>&1 | tee /tmp/knope.out
+          status=${PIPESTATUS[0]}
+          if [[ $status -ne 0 ]] && grep -q "no_release\|No packages are ready" /tmp/knope.out; then
+            echo "::notice::Nothing to release — no changesets or qualifying commits"
+            exit 0
+          fi
+          exit $status
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
