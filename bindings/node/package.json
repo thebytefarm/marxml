@@ -1,6 +1,6 @@
 {
   "name": "marxml",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fast markdown + XML query and mutation. Rust core with native Node bindings.",
   "keywords": [
     "markdown",
