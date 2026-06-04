@@ -1,15 +1,18 @@
-// node-advanced — selector reuse, mutation, validation, structured serialize.
+// node-advanced — selector reuse, mutation, validation, three-shape serialize.
 //
 // Reads samples/plan.md (a real markdown document with embedded XML),
-// mutates it surgically, and writes two outputs:
+// mutates it surgically, and writes three outputs:
 //
-// - out/plan.md  — full markdown document with edits applied. Headings,
-//                  bullets, and prose are byte-preserved; only the inside
-//                  of <task> / <phase> tags changes. Still renders cleanly
-//                  on GitHub.
-// - out/plan.xml — structured payload via toXml({ structured: true }). Single
-//                  <markdown> root, indented, markdown noise stripped between
-//                  siblings. Valid XML document (passes xmllint).
+// - out/plan.md   — full markdown document with edits applied. Headings,
+//                   bullets, and prose are byte-preserved; only the inside
+//                   of <task> / <phase> tags changes. Still renders cleanly
+//                   on GitHub.
+// - out/plan.xml  — structured payload via toXml({ structured: true }).
+//                   Single <markdown> root, indented, markdown noise stripped
+//                   between siblings. Valid XML document.
+// - out/plan.json — structured tree via toJson + JSON.stringify(_, null, 2).
+// - out/plan.yaml — same structured tree, via toYaml. Same shape as toJson,
+//                   just YAML-encoded.
 //
 // From examples/node-advanced/:
 //   pnpm install
@@ -94,7 +97,25 @@ const xmlPath = resolve(OUT_DIR, 'plan.xml')
 writeFileSync(xmlPath, xml)
 console.log(`wrote ${xmlPath} (${xml.length} bytes) — structured XML extract`)
 
+// (4c) Same structured tree, encoded as JSON.
+// `toJson({ structured: true })` wraps under a `markdown` key and empties
+// non-leaf `text` fields so the JSON matches the XML output in shape.
+const json = `${JSON.stringify(doc3.toJson({ structured: true }), null, 2)}\n`
+const jsonPath = resolve(OUT_DIR, 'plan.json')
+writeFileSync(jsonPath, json)
+console.log(`wrote ${jsonPath} (${json.length} bytes) — structured JSON extract`)
+
+// (4d) Same structured tree, encoded as YAML.
+const yaml = doc3.toYaml({ structured: true })
+const yamlPath = resolve(OUT_DIR, 'plan.yaml')
+writeFileSync(yamlPath, yaml)
+console.log(`wrote ${yamlPath} (${yaml.length} bytes) — structured YAML extract`)
+
 console.log('\n-- markdown preview (out/plan.md) --')
 console.log(doc3.raw)
 console.log('\n-- xml preview (out/plan.xml) --')
 console.log(xml)
+console.log('\n-- json preview (out/plan.json) --')
+console.log(json)
+console.log('\n-- yaml preview (out/plan.yaml) --')
+console.log(yaml)

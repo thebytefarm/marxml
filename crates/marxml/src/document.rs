@@ -258,6 +258,47 @@ impl Markdown {
         crate::serialize::to_json(self)
     }
 
+    /// Like [`Self::to_json`] but applies [`crate::SerializeOpts`] to the
+    /// canonical shape:
+    ///
+    /// - `strip_text` empties the `text` field on every non-leaf element
+    ///   (the markdown-prose noise that would otherwise sit between
+    ///   sibling tags).
+    /// - `wrap_in` wraps the top-level array under that key, producing
+    ///   `{"<name>": [...]}` instead of `[...]`. Useful when callers want
+    ///   a top-level object instead of an array, or for shape parity with
+    ///   the synthetic XML root used by
+    ///   [`crate::SerializeOpts::structured`].
+    /// - `indent` and `self_close_empty` are ignored (JSON-irrelevant).
+    #[must_use]
+    pub fn to_json_with(&self, opts: &crate::SerializeOpts) -> serde_json::Value {
+        crate::serialize::to_json_with(self, opts)
+    }
+
+    /// Serialize the element tree as a YAML string.
+    ///
+    /// Shape matches [`Self::to_json`] — same field names, same nesting —
+    /// so callers can pick the encoding without re-learning the schema.
+    /// The top-level is a YAML sequence of root elements.
+    ///
+    /// Inter-element markdown prose between sibling tags is captured in
+    /// the parent element's `text` field (joined into a single string),
+    /// mirroring [`Self::to_json`]. To get a structured YAML extract that
+    /// drops that prose, use [`Self::to_yaml_with`] with
+    /// [`crate::SerializeOpts::structured`].
+    #[must_use]
+    pub fn to_yaml(&self) -> String {
+        crate::serialize::to_yaml(self)
+    }
+
+    /// Like [`Self::to_yaml`] but applies [`crate::SerializeOpts`] to the
+    /// canonical shape. See [`Self::to_json_with`] for the semantics of
+    /// `strip_text` and `wrap_in`; both apply identically to YAML output.
+    #[must_use]
+    pub fn to_yaml_with(&self, opts: &crate::SerializeOpts) -> String {
+        crate::serialize::to_yaml_with(self, opts)
+    }
+
     /// Crate-internal accessor for the parsed root elements.
     pub(crate) fn roots_internal(&self) -> &[ElementData] {
         &self.roots

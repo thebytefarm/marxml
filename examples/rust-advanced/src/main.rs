@@ -1,14 +1,16 @@
-//! rust-advanced — selector reuse, mutation, validation, structured serialize.
+//! rust-advanced — selector reuse, mutation, validation, two-shape serialize.
 //!
 //! Reads samples/plan.md (a real markdown document with embedded XML),
 //! mutates it surgically, and writes two outputs:
 //!
-//! - `out/plan.md`  — full markdown document with edits applied. Headings,
+//! - `out/plan.md`   — full markdown document with edits applied. Headings,
 //!   bullets, and prose are byte-preserved; only the inside of `<task>` /
 //!   `<phase>` tags changes. Still renders cleanly on GitHub.
-//! - `out/plan.xml` — structured payload, via `to_xml(SerializeOpts::structured())`.
-//!   Single `<markdown>` root, indented, markdown noise stripped between
-//!   siblings. Valid XML document (passes `xmllint`).
+//! - `out/plan.xml`  — structured payload, via `to_xml(structured())`. Single
+//!   `<markdown>` root, indented, markdown noise stripped between siblings.
+//! - `out/plan.json` — structured tree, via `to_json` + pretty-printed.
+//! - `out/plan.yaml` — same structured tree, via `to_yaml`. Same shape as
+//!   `to_json`, just YAML-encoded.
 //!
 //! From the repo root:
 //!
@@ -100,8 +102,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         xml.len()
     );
 
+    // (4c) Same structured tree, encoded as JSON.
+    // `to_json_with(structured())` wraps under a `markdown` key and empties
+    // non-leaf `text` fields so the JSON matches the XML output in shape.
+    let json = serde_json::to_string_pretty(&doc3.to_json_with(&SerializeOpts::structured()))?;
+    let json_path = out_dir.join("plan.json");
+    fs::write(&json_path, &json)?;
+    println!(
+        "wrote {} ({} bytes) — structured JSON extract",
+        json_path.display(),
+        json.len()
+    );
+
+    // (4d) Same structured tree, encoded as YAML.
+    let yaml = doc3.to_yaml_with(&SerializeOpts::structured());
+    let yaml_path = out_dir.join("plan.yaml");
+    fs::write(&yaml_path, &yaml)?;
+    println!(
+        "wrote {} ({} bytes) — structured YAML extract",
+        yaml_path.display(),
+        yaml.len()
+    );
+
     println!("\n-- markdown preview (out/plan.md) --\n{}", doc3.raw());
     println!("\n-- xml preview (out/plan.xml) --\n{xml}");
+    println!("\n-- json preview (out/plan.json) --\n{json}");
+    println!("\n-- yaml preview (out/plan.yaml) --\n{yaml}");
 
     Ok(())
 }

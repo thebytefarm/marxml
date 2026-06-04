@@ -317,3 +317,117 @@ fn to_xml_structured_round_trips_through_parse() {
     let reparsed = parse(&out).expect("structured output must parse cleanly");
     assert_eq!(reparsed.root_count(), 1); // the synthetic <markdown> wrapper
 }
+
+// ─── to_yaml ───────────────────────────────────────────────────────────────
+
+#[test]
+fn to_yaml_returns_nonempty_string_for_simple_element() {
+    let src = r#"<task id="1">body</task>"#;
+    let doc = parse(src).unwrap();
+    let out = doc.to_yaml();
+    assert!(out.contains("tag: task"));
+    assert!(out.contains("id: \"1\""));
+    assert!(out.contains("body"));
+}
+
+#[test]
+fn to_yaml_emits_array_for_empty_doc() {
+    let doc = parse("plain text").unwrap();
+    let out = doc.to_yaml();
+    // serde-saphyr emits an empty sequence as "[]" (flow) or empty.
+    // Round-trip via serde_saphyr to confirm validity.
+    let parsed: serde_json::Value = serde_saphyr::from_str(&out).unwrap();
+    assert_eq!(parsed, serde_json::json!([]));
+}
+
+#[test]
+fn to_yaml_round_trips_through_serde_saphyr() {
+    let src = r#"<phase id="1"><task id="1.1">body</task></phase>"#;
+    let doc = parse(src).unwrap();
+    let yaml = doc.to_yaml();
+    let reparsed: serde_json::Value =
+        serde_saphyr::from_str(&yaml).expect("to_yaml output must parse as YAML");
+    // Top-level is an array of root elements, just like to_json.
+    let array = reparsed.as_array().expect("top level must be array");
+    assert_eq!(array.len(), 1);
+    assert_eq!(array[0]["tag"], "phase");
+    assert_eq!(array[0]["children"].as_array().unwrap()[0]["tag"], "task");
+}
+
+#[test]
+fn to_yaml_shape_matches_to_json() {
+    // Same canonical shape across encodings — callers can pick the format
+    // without re-learning the schema.
+    let src = r#"<task id="1" status="todo">body</task>"#;
+    let doc = parse(src).unwrap();
+    let json = doc.to_json();
+    let yaml = doc.to_yaml();
+    let yaml_as_json: serde_json::Value = serde_saphyr::from_str(&yaml).unwrap();
+    // Compare the structural shape. `location` numbers are identical; attrs
+    // and text round-trip cleanly.
+    assert_eq!(json, yaml_as_json);
+}
+
+// ─── to_json_with / to_yaml_with (opts-driven shape) ───────────────────────
+
+#[test]
+fn to_json_with_wrap_in_produces_top_level_object() {
+    let src = "<a/><b/>";
+    let doc = parse(src).unwrap();
+    let val = doc.to_json_with(&SerializeOpts::default().with_root("markdown"));
+    let obj = val.as_object().expect("wrap_in produces an object");
+    let arr = obj["markdown"]
+        .as_array()
+        .expect("wrapped key holds an array");
+    assert_eq!(arr.len(), 2);
+}
+
+#[test]
+fn to_json_with_strip_text_empties_non_leaf_text() {
+    // `<phase>` has prose between children, so its `text` field is the
+    // markdown noise. After strip_text, that's empty. Leaf `<task>` keeps
+    // its body.
+    let src = "<phase>prose<task>body</task></phase>";
+    let doc = parse(src).unwrap();
+    let val = doc.to_json_with(&SerializeOpts::default().strip_text(true));
+    let phase = &val.as_array().unwrap()[0];
+    assert_eq!(phase["text"], "");
+    assert_eq!(phase["children"][0]["text"], "body");
+}
+
+#[test]
+fn to_json_with_structured_combines_wrap_and_strip() {
+    let src = "<phase>noise<task id=\"1\">leaf</task></phase>";
+    let doc = parse(src).unwrap();
+    let val = doc.to_json_with(&SerializeOpts::structured());
+    let obj = val.as_object().expect("structured() wraps under a key");
+    assert!(obj.contains_key("markdown"));
+    let phase = &obj["markdown"].as_array().unwrap()[0];
+    assert_eq!(phase["tag"], "phase");
+    assert_eq!(phase["text"], ""); // non-leaf: stripped
+    assert_eq!(phase["children"][0]["text"], "leaf"); // leaf: kept
+}
+
+#[test]
+fn to_yaml_with_mirrors_to_json_with() {
+    let src = "<phase>noise<task id=\"1\">leaf</task></phase>";
+    let doc = parse(src).unwrap();
+    let opts = SerializeOpts::structured();
+    let json = doc.to_json_with(&opts);
+    let yaml = doc.to_yaml_with(&opts);
+    let yaml_as_json: serde_json::Value = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(json, yaml_as_json);
+}
+
+#[test]
+fn to_yaml_with_structured_emits_mapping_root() {
+    let src = "<a/>";
+    let doc = parse(src).unwrap();
+    let yaml = doc.to_yaml_with(&SerializeOpts::structured());
+    // Top-level is a mapping with one key, not a sequence.
+    assert!(yaml.contains("markdown:"));
+    // Round-trip back to a value tree to confirm shape.
+    let parsed: serde_json::Value = serde_saphyr::from_str(&yaml).unwrap();
+    let obj = parsed.as_object().unwrap();
+    assert!(obj.contains_key("markdown"));
+}

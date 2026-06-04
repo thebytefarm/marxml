@@ -173,12 +173,85 @@ pub(crate) fn to_xml(doc: &Markdown, opts: &SerializeOpts) -> String {
 }
 
 pub(crate) fn to_json(doc: &Markdown) -> Value {
+    canonical_value(doc)
+}
+
+pub(crate) fn to_json_with(doc: &Markdown, opts: &SerializeOpts) -> Value {
+    shape_value(canonical_value(doc), opts)
+}
+
+pub(crate) fn to_yaml(doc: &Markdown) -> String {
+    // `canonical_value` produces the same shape that backs `to_json`. The
+    // serializer is infallible for this input — every `serde_json::Value`
+    // variant maps cleanly to YAML — so the `Err` arm is unreachable in
+    // practice. We still guard against it with a sentinel rather than
+    // panicking, because misbehaving serializers from a future
+    // `serde-saphyr` update should not crash callers.
+    serde_saphyr::to_string(&canonical_value(doc)).unwrap_or_else(|_| "[]\n".to_string())
+}
+
+pub(crate) fn to_yaml_with(doc: &Markdown, opts: &SerializeOpts) -> String {
+    serde_saphyr::to_string(&to_json_with(doc, opts)).unwrap_or_else(|_| "[]\n".to_string())
+}
+
+/// Canonical tree shape shared across [`to_json`] and [`to_yaml`].
+///
+/// Top-level result is an array of root elements. Each element carries
+/// `tag` / `attrs` / `text` / `children` / `selfClosing` / `location`.
+fn canonical_value(doc: &Markdown) -> Value {
     Value::Array(
         doc.roots_internal()
             .iter()
-            .map(|root| element_json(root, doc.raw(), doc.trivia()))
+            .map(|root| element_value(root, doc.raw(), doc.trivia()))
             .collect(),
     )
+}
+
+/// Apply `strip_text` and `wrap_in` to the canonical value.
+///
+/// `strip_text` empties the `text` field on every element that has children,
+/// matching the structured-XML behavior (drop inter-element markdown noise
+/// at the canonical-shape layer too). Leaf elements keep their `text` body.
+///
+/// `wrap_in` wraps the top-level array under the given key:
+/// `[{...}, {...}]` becomes `{"<name>": [{...}, {...}]}`. Mirrors the
+/// synthetic XML root used by `to_xml(SerializeOpts::structured())`.
+fn shape_value(mut value: Value, opts: &SerializeOpts) -> Value {
+    if opts.strip_text {
+        if let Value::Array(arr) = &mut value {
+            for el in arr.iter_mut() {
+                strip_non_leaf_text(el);
+            }
+        }
+    }
+    if let Some(name) = &opts.wrap_in {
+        let mut obj = Map::new();
+        obj.insert(name.clone(), value);
+        Value::Object(obj)
+    } else {
+        value
+    }
+}
+
+/// Recursively empty the `text` field on every element that has children.
+/// Leaves are untouched — their `text` is their actual body content.
+fn strip_non_leaf_text(node: &mut Value) {
+    if let Value::Object(obj) = node {
+        let has_children = obj
+            .get("children")
+            .and_then(Value::as_array)
+            .is_some_and(|a| !a.is_empty());
+        if has_children {
+            if let Some(text) = obj.get_mut("text") {
+                *text = Value::String(String::new());
+            }
+        }
+        if let Some(Value::Array(children)) = obj.get_mut("children") {
+            for child in children {
+                strip_non_leaf_text(child);
+            }
+        }
+    }
 }
 
 fn emit_element(
@@ -352,7 +425,7 @@ fn indent_for(opts: &SerializeOpts, depth: usize, out: &mut String) {
     }
 }
 
-fn element_json(el: &ElementData, raw: &str, trivia: &[core::ops::Range<usize>]) -> Value {
+fn element_value(el: &ElementData, raw: &str, trivia: &[core::ops::Range<usize>]) -> Value {
     let attrs: Map<String, Value> = el
         .attrs
         .iter()
@@ -361,7 +434,7 @@ fn element_json(el: &ElementData, raw: &str, trivia: &[core::ops::Range<usize>])
     let children: Vec<Value> = el
         .children
         .iter()
-        .map(|c| element_json(c, raw, trivia))
+        .map(|c| element_value(c, raw, trivia))
         .collect();
     // `text` is the direct, child-stripped text of this element joined into a
     // single string. It does not recurse into descendants, so nesting depth

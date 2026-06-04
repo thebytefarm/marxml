@@ -361,12 +361,34 @@ impl NativeMarkdown {
         Ok(self.inner.to_xml(&serialize_opts))
     }
 
-    /// Serialize the element tree as a JSON string. Top-level is an array of
-    /// root elements; see the crate docs for the per-element schema.
+    /// Serialize the element tree as a JSON string.
+    ///
+    /// Without options the top-level is an array of root elements. With
+    /// `wrapIn` the array is wrapped under that key (`{"<name>": [...]}`).
+    /// With `stripText` the `text` field on every non-leaf element is
+    /// emptied. `structured: true` is the convenience combination.
     #[napi]
-    pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string(&self.inner.to_json())
-            .map_err(|e| Error::new(Status::GenericFailure, e.to_string()))
+    pub fn to_json(&self, opts: Option<ToXmlOpts>) -> Result<String> {
+        let value = match resolve_opts(opts) {
+            Some(opts) => self.inner.to_json_with(&opts),
+            None => self.inner.to_json(),
+        };
+        serde_json::to_string(&value).map_err(|e| Error::new(Status::GenericFailure, e.to_string()))
+    }
+
+    /// Serialize the element tree as a YAML string. Same canonical shape
+    /// as [`Self::to_json`].
+    ///
+    /// Without options the top-level is a sequence of root elements. With
+    /// `wrapIn` the sequence is wrapped under that key. With `stripText`
+    /// the `text` field on every non-leaf element is emptied.
+    /// `structured: true` is the convenience combination.
+    #[napi]
+    pub fn to_yaml(&self, opts: Option<ToXmlOpts>) -> String {
+        match resolve_opts(opts) {
+            Some(opts) => self.inner.to_yaml_with(&opts),
+            None => self.inner.to_yaml(),
+        }
     }
 
     /// Validate the document against `schema` (per-tag declarations keyed by

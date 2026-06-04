@@ -211,6 +211,74 @@ describe('toXml', () => {
   })
 })
 
+describe('toYaml', () => {
+  it('returns a YAML string for a simple element', () => {
+    const doc = parse('<task id="1">body</task>')
+    const yaml = doc.toYaml()
+    expect(typeof yaml).toBe('string')
+    expect(yaml).toMatch(/tag: task/)
+    expect(yaml).toMatch(/id: '1'|id: "1"/) // quoted by saphyr
+    expect(yaml).toMatch(/body/)
+  })
+
+  it('shape mirrors toJson', () => {
+    const doc = parse('<phase id="1"><task id="1.1"/></phase>')
+    const json = doc.toJson() as Array<{ tag: string; children: Array<{ tag: string }> }>
+    expect(json).toHaveLength(1)
+    expect(json[0].tag).toBe('phase')
+    expect(json[0].children[0].tag).toBe('task')
+
+    // The YAML string must mention the same tags.
+    const yaml = doc.toYaml()
+    expect(yaml).toMatch(/tag: phase/)
+    expect(yaml).toMatch(/tag: task/)
+  })
+
+  it('emits an empty sequence for a document with no elements', () => {
+    const doc = parse('just markdown, no tags here')
+    const yaml = doc.toYaml()
+    // serde-saphyr renders an empty array as `[]`.
+    expect(yaml.trim()).toBe('[]')
+  })
+})
+
+describe('toJson/toYaml opts', () => {
+  it('toJson wrapIn produces a top-level object', () => {
+    const doc = parse('<a/><b/>')
+    const out = doc.toJson({ wrapIn: 'markdown' }) as Record<string, Array<{ tag: string }>>
+    expect(out.markdown).toBeDefined()
+    expect(out.markdown).toHaveLength(2)
+    expect(out.markdown[0].tag).toBe('a')
+  })
+
+  it('toJson stripText empties non-leaf text', () => {
+    const doc = parse('<phase>noise<task>body</task></phase>')
+    const out = doc.toJson({ stripText: true }) as Array<{ text: string; children: Array<{ text: string }> }>
+    expect(out[0].text).toBe('')        // non-leaf stripped
+    expect(out[0].children[0].text).toBe('body') // leaf kept
+  })
+
+  it('toJson structured: true combines wrap + strip with markdown key', () => {
+    const doc = parse('<phase>noise<task id="1">leaf</task></phase>')
+    const out = doc.toJson({ structured: true }) as Record<string, Array<{ tag: string; text: string }>>
+    expect(out.markdown).toBeDefined()
+    expect(out.markdown[0].tag).toBe('phase')
+    expect(out.markdown[0].text).toBe('')
+  })
+
+  it('toYaml structured: true emits a mapping root', () => {
+    const doc = parse('<a/>')
+    const yaml = doc.toYaml({ structured: true })
+    expect(yaml).toMatch(/^markdown:/)
+  })
+
+  it('toYaml wrapIn overrides the default markdown wrapper', () => {
+    const doc = parse('<a/>')
+    const yaml = doc.toYaml({ structured: true, wrapIn: 'plan' })
+    expect(yaml).toMatch(/^plan:/)
+  })
+})
+
 describe('toJson', () => {
   it('returns a parsed tree (not a string)', () => {
     const doc = parse('<task id="1"/>')

@@ -48,8 +48,11 @@ function wrap(m) {
     toXml(opts) {
       return m.toXml(opts ?? null)
     },
-    toJson() {
-      return JSON.parse(m.toJson())
+    toJson(opts) {
+      return JSON.parse(m.toJson(opts ?? null))
+    },
+    toYaml(opts) {
+      return m.toYaml(opts ?? null)
     },
     validate(schema) {
       return m.validate(schema)
@@ -75,6 +78,7 @@ function wrap(m) {
  * @property {(selector: string, newText: string) => string} replaceText
  * @property {(selector: string, pattern: string | RegExp, replacement: string) => string} replaceInContent
  * @property {(opts?: ToXmlOpts) => string} toXml
- * @property {() => unknown} toJson      Returns the parsed JSON tree (not a string).
+ * @property {(opts?: ToXmlOpts) => unknown} toJson  Returns the parsed JSON tree (not a string).
+ * @property {(opts?: ToXmlOpts) => string} toYaml   YAML string mirroring the JSON shape.
  * @property {(schema: Record<string, TagSchemaShape>) => ValidationReport} validate
  */

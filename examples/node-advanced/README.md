@@ -11,9 +11,11 @@ as a tree of `<phase>` / `<task>` elements.
   prose, and bullets are byte-preserved.
 - `replaceText` swaps one task body (safe: caller-supplied bytes are escaped).
 - `validate` checks the rewritten document against a schema.
-- Writes two outputs:
+- Writes four outputs:
   - `out/plan.md` — full markdown with surgical edits (still renders on GitHub).
   - `out/plan.xml` — clean structured payload, via `toXml({ structured: true })`. Single `<markdown>` root, indented, markdown noise stripped between siblings. Valid XML document (passes `xmllint`).
+  - `out/plan.json` — structured tree, via `toJson` + `JSON.stringify(_, null, 2)`. Typed as `MarkdownNode[]`.
+  - `out/plan.yaml` — same structured tree, via `toYaml`. Parsed YAML has the same `MarkdownNode[]` shape as the JSON output.
 
 ## Run
 
@@ -48,3 +50,5 @@ The input fixture is never written to — only files under `out/` are produced �
 - `MarkdownDoc.updateAttrs`, `MarkdownDoc.replaceText`
 - `MarkdownDoc.validate` with `TagSchemaShape`
 - `MarkdownDoc.toXml({ structured: true })` — pretty + stripText + wrapIn:"markdown"
+- `MarkdownDoc.toJson` (returns typed `MarkdownNode[]`)
+- `MarkdownDoc.toYaml` (same shape as `toJson`, YAML-encoded)

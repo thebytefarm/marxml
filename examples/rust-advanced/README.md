@@ -12,9 +12,11 @@ as a tree of `<phase>` / `<task>` elements.
   and bullets are byte-preserved.
 - `replace_text` swaps one task body (safe: caller-supplied bytes are escaped).
 - `validate` checks the rewritten document against a `Schema`.
-- Writes two outputs:
+- Writes four outputs:
   - `out/plan.md` — full markdown with surgical edits (still renders on GitHub).
   - `out/plan.xml` — clean structured payload, via `to_xml(SerializeOpts::structured())`. Single `<markdown>` root, indented, markdown noise stripped between siblings. Valid XML document (passes `xmllint`).
+  - `out/plan.json` — structured tree, via `to_json` + `serde_json::to_string_pretty`.
+  - `out/plan.yaml` — same structured tree, via `to_yaml`. Same canonical shape as `to_json`, just YAML-encoded.
 
 ## Run
 
@@ -39,4 +41,4 @@ The input fixture is never written to — only files under `out/` are produced �
 - `Markdown::update`, `Markdown::replace_text`
 - `Schema::builder`, `AttrKind::one_of`, `marxml::validate`
 - `SerializeOpts::structured` (pretty + strip_text + wrap_in("markdown"))
-- `Markdown::to_xml`
+- `Markdown::to_xml`, `Markdown::to_json`, `Markdown::to_yaml`

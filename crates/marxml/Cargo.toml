@@ -25,6 +25,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde-saphyr = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

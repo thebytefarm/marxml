@@ -16,10 +16,40 @@ export type {
 import type {
   Element,
   AttrUpdate,
+  SourceSpan,
   TagSchemaShape,
   ValidationReport,
   ToXmlOpts,
 } from './index.js'
+
+/**
+ * Canonical tree node returned by {@link MarkdownDoc.toJson} and mirrored
+ * as the parsed shape of {@link MarkdownDoc.toYaml}.
+ *
+ * Distinct from {@link Element} (the materialized view used by `select()`
+ * and `doc.elements`): this shape carries the *direct* text segments of
+ * each element joined into `text` (with child-element markup excluded),
+ * and the source span under `location` instead of `loc`. Entity references
+ * inside `text` are decoded to their literal characters.
+ */
+export interface MarkdownNode {
+  /** Element tag name (e.g. `"task"`). */
+  tag: string
+  /** Attribute key/value pairs in source order. */
+  attrs: Record<string, string>
+  /**
+   * Direct text content of the element, child-element markup excluded.
+   * For `<p>before <em>x</em> after</p>` this is `"before  after"`.
+   * Entity references are decoded.
+   */
+  text: string
+  /** Recursively-serialized child elements, in source order. */
+  children: MarkdownNode[]
+  /** `true` for `<tag/>`, `false` for `<tag>…</tag>`. */
+  selfClosing: boolean
+  /** Source span covering the entire element. */
+  location: SourceSpan
+}
 
 /**
  * Parsed document handle. Returned by {@link parse}. Methods close over the
@@ -106,13 +136,37 @@ export interface MarkdownDoc {
   toXml(opts?: ToXmlOpts): string
 
   /**
-   * Serialize the element tree as a JSON value (already parsed; no string
-   * round-trip needed at the call site).
+   * Serialize the element tree as a JSON value. The native binding emits a
+   * JSON string which the wrapper at `marxml.mjs` parses for you — at the
+   * call site you receive a structured value, but the cost is two passes
+   * (one Rust-side serialize, one V8 `JSON.parse`). For large documents
+   * prefer `toXml({ pretty: false })` if you only need a serialized form.
    *
-   * Top-level is an array of root elements. Each element carries
-   * `tag` / `attrs` / `text` / `children` / `selfClosing` / `location`.
+   * Without options: top-level is an array of root elements. See
+   * {@link MarkdownNode} for the per-element shape.
+   *
+   * With `wrapIn`: top-level is `{ [wrapIn]: MarkdownNode[] }` — useful
+   * for shape parity with `toXml({ structured: true })`.
+   *
+   * With `stripText`: the `text` field on every non-leaf element is
+   * emptied, dropping the markdown noise that would otherwise sit between
+   * sibling tags.
+   *
+   * `structured: true` is the convenience combination of both, with
+   * `wrapIn` defaulting to `"markdown"`.
+   *
+   * `pretty` and `selfCloseEmpty` are ignored (JSON-irrelevant).
    */
-  toJson(): unknown
+  toJson(opts?: ToXmlOpts): MarkdownNode[] | Record<string, MarkdownNode[]>
+
+  /**
+   * Serialize the element tree as a YAML string. Same canonical shape as
+   * {@link MarkdownDoc.toJson}. Without options the top-level is a YAML
+   * sequence of {@link MarkdownNode}; with `wrapIn` it becomes a mapping
+   * `wrapIn: [...]`. See {@link MarkdownDoc.toJson} for the full
+   * `stripText` / `wrapIn` / `structured` semantics.
+   */
+  toYaml(opts?: ToXmlOpts): string
 
   /**
    * Validate the document against `schema` (per-tag declarations keyed by

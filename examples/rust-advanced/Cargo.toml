@@ -7,3 +7,4 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 marxml = { path = "../../crates/marxml" }
+serde_json = { workspace = true }
