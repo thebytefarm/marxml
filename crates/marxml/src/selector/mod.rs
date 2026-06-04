@@ -7,7 +7,7 @@ mod error;
 mod matcher;
 mod parser;
 
-pub use error::SelectorError;
+pub use error::{SelectorError, SyntaxKind};
 
 use crate::types::{ElementData, ElementRef};
 

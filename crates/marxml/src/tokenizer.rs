@@ -19,7 +19,7 @@
 
 use std::collections::HashSet;
 
-use crate::error::ParseError;
+use crate::error::{MalformedAttrKind, MalformedTagKind, ParseError};
 use crate::escape::{decode_entities, is_name_char, is_name_start};
 use crate::types::{SourcePosition, SourceSpan};
 
@@ -180,7 +180,7 @@ fn parse_end_tag(
     skip_ws(bytes, &mut i, &mut line);
     if i >= bytes.len() || bytes[i] != b'>' {
         return Err(ParseError::MalformedTag {
-            reason: format!("expected '>' to close </{name}>"),
+            kind: MalformedTagKind::ExpectedCloseAngle { tag: name },
             line: start_line,
         });
     }
@@ -296,7 +296,9 @@ fn parse_attribute_list(
         skip_ws(bytes, &mut i, &mut line);
         if i >= bytes.len() {
             return Err(ParseError::MalformedTag {
-                reason: format!("<{tag_name}> not terminated"),
+                kind: MalformedTagKind::UnterminatedOpenTag {
+                    tag: tag_name.to_string(),
+                },
                 line: tag_start_line,
             });
         }
@@ -313,7 +315,9 @@ fn parse_attribute_list(
                 i += 1;
                 if i >= bytes.len() || bytes[i] != b'>' {
                     return Err(ParseError::MalformedTag {
-                        reason: format!("expected '>' after '/' in <{tag_name}/>"),
+                        kind: MalformedTagKind::ExpectedCloseSlashAngle {
+                            tag: tag_name.to_string(),
+                        },
                         line: tag_start_line,
                     });
                 }
@@ -403,10 +407,9 @@ fn parse_attribute(
     if i >= bytes.len() || !is_name_start(bytes[i]) {
         return Err(ParseError::MalformedAttribute {
             tag: tag_name.to_string(),
-            reason: format!(
-                "unexpected character {:?} at start of attribute name",
-                next_char_at(input, i).unwrap_or('\0')
-            ),
+            kind: MalformedAttrKind::UnexpectedNameStart {
+                found: next_char_at(input, i).unwrap_or('\0'),
+            },
             line,
         });
     }
@@ -420,7 +423,7 @@ fn parse_attribute(
     if i >= bytes.len() || bytes[i] != b'=' {
         return Err(ParseError::MalformedAttribute {
             tag: tag_name.to_string(),
-            reason: format!("expected '=' after attribute {key}"),
+            kind: MalformedAttrKind::ExpectedEquals { attr: key },
             line,
         });
     }
@@ -429,7 +432,7 @@ fn parse_attribute(
     if i >= bytes.len() || bytes[i] != b'"' {
         return Err(ParseError::MalformedAttribute {
             tag: tag_name.to_string(),
-            reason: format!("expected '\"' to open value of {key}"),
+            kind: MalformedAttrKind::ExpectedOpenQuote { attr: key },
             line,
         });
     }
@@ -445,7 +448,7 @@ fn parse_attribute(
     if i >= bytes.len() {
         return Err(ParseError::MalformedAttribute {
             tag: tag_name.to_string(),
-            reason: format!("unterminated value of {key}"),
+            kind: MalformedAttrKind::UnterminatedValue { attr: key },
             line: start_line,
         });
     }
@@ -476,8 +479,8 @@ fn try_skip_comment(
         return Ok(None);
     }
     scan_to_terminator(bytes, start + 4, start_line, b"-->")
-        .ok_or_else(|| ParseError::MalformedTag {
-            reason: "unterminated <!-- comment".to_string(),
+        .ok_or(ParseError::MalformedTag {
+            kind: MalformedTagKind::UnterminatedComment,
             line: start_line,
         })
         .map(Some)
@@ -495,8 +498,8 @@ fn try_skip_cdata(
         return Ok(None);
     }
     scan_to_terminator(bytes, start + 9, start_line, b"]]>")
-        .ok_or_else(|| ParseError::MalformedTag {
-            reason: "unterminated <![CDATA[ section".to_string(),
+        .ok_or(ParseError::MalformedTag {
+            kind: MalformedTagKind::UnterminatedCdata,
             line: start_line,
         })
         .map(Some)
