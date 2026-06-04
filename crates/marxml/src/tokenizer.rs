@@ -373,10 +373,7 @@ fn record_seen_attr(
     if attrs.len() + 1 < ATTR_DUP_SET_THRESHOLD {
         return;
     }
-    let mut set: HashSet<String> = HashSet::with_capacity(attrs.len() + 1);
-    for (k, _) in attrs {
-        set.insert(k.clone());
-    }
+    let mut set: HashSet<String> = attrs.iter().map(|(k, _)| k.clone()).collect();
     set.insert(next_key.to_string());
     *seen = Some(set);
 }
@@ -446,10 +443,14 @@ fn parse_attribute(
         i += 1;
     }
     if i >= bytes.len() {
+        // Use `line` (advanced through every '\n' in the value scan) rather
+        // than `start_line` (the attribute-name line) so the diagnostic
+        // points at the line where input ran out, not at the attribute name
+        // potentially many lines above.
         return Err(ParseError::MalformedAttribute {
             tag: tag_name.to_string(),
             kind: MalformedAttrKind::UnterminatedValue { attr: key },
-            line: start_line,
+            line,
         });
     }
     // Decode the five XML predefined entities + numeric character references

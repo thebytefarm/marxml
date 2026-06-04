@@ -207,7 +207,11 @@ pub(crate) fn decode_entities(value: &str) -> Cow<'_, str> {
             continue;
         }
         // Copy one whole UTF-8 scalar so multi-byte sequences stay intact.
-        let ch = value[i..].chars().next().expect("non-empty tail");
+        // `i < bytes.len()` (loop condition) and `value: &str` guarantees a
+        // codepoint boundary at `i`, so the leading char always exists.
+        let Some(ch) = value[i..].chars().next() else {
+            unreachable!("loop guarantees i < value.len() and i is on a codepoint boundary");
+        };
         out.push(ch);
         i += ch.len_utf8();
     }

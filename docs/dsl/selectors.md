@@ -81,7 +81,7 @@ Chain them: `a b > c d` matches any `<d>` descendant of a `<c>` that is a direct
 | `:nth-child(n)`    | element is the `n`-th child (1-indexed). `n` is an integer ≥ 1.                    |
 | `:not(simple)`     | element does NOT match the inner simple selector.                                  |
 
-`:nth-child(0)` is rejected at parse time — siblings are 1-indexed. `:not(:not(...))` is rejected (the inner argument is a single simple, not another negation).
+`:nth-child(0)` is rejected at parse time — siblings are 1-indexed. The inner argument of `:not(...)` is a single simple selector; nested `:not()` is permitted but capped at 64 levels of nesting before the parser rejects it as `NotNestingTooDeep` (see Limits table).
 
 ### Limits
 

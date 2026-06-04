@@ -47,7 +47,7 @@ pub use schema::{AttrConstraint, AttrKind, Schema, SchemaBuilder, SchemaError, T
 pub use selector::{Selector, SelectorError, SyntaxKind};
 pub use serialize::SerializeOpts;
 pub use types::{ElementRef, SourcePosition, SourceSpan};
-pub use validate::{validate, ValidationError, ValidationReport};
+pub use validate::{validate, InvalidAttrKind, ValidationError, ValidationReport};
 
 /// Crate version exposed for downstream diagnostics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

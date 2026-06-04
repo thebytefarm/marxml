@@ -39,6 +39,54 @@ use napi::{Error, Result, Status};
 use napi_derive::napi;
 use regex::{Regex, RegexBuilder};
 
+// ─── Error mapping ────────────────────────────────────────────────────────
+
+/// Map any crate-side `Result<T, E: std::error::Error>` into `napi::Result<T>`
+/// with `Status::InvalidArg`. The orphan rule prevents a direct
+/// `From<marxml::*Error> for napi::Error` impl in this crate, so this
+/// extension trait stands in: call sites read `marxml::Selector::parse(s)
+/// .into_napi()?` instead of repeating the `.map_err(|e| Error::new(...))`
+/// closure on every fallible boundary.
+///
+/// Every marxml error variant is caller-input (malformed selector,
+/// duplicate attribute, invalid XML name, regex compile failure), so a
+/// single `InvalidArg` status fits all of them. If a future variant ever
+/// represents a binding-internal failure, swap the call site to an explicit
+/// `Error::new(Status::GenericFailure, ...)` and document why.
+trait IntoNapi<T> {
+    fn into_napi(self) -> Result<T>;
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, marxml::ParseError> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, marxml::SelectorError> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, marxml::MutateError> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, marxml::SchemaError> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, regex::Error> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
+
 // ─── Flat shape types crossing the FFI ────────────────────────────────────
 
 /// One-based line + zero-based byte offset into the source document.
@@ -246,7 +294,7 @@ impl NativeMarkdown {
         self.inner
             .try_update(&sel, &pairs)
             .map(|report| report.output)
-            .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+            .into_napi()
     }
 
     /// Replace inner content verbatim. `new_body` is spliced as raw bytes —
@@ -345,13 +393,13 @@ impl NativeMarkdown {
 pub fn parse(source: String) -> Result<NativeMarkdown> {
     marxml::parse(&source)
         .map(|inner| NativeMarkdown { inner })
-        .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+        .into_napi()
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────
 
 fn parse_selector(s: &str) -> Result<marxml::Selector> {
-    marxml::Selector::parse(s).map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    marxml::Selector::parse(s).into_napi()
 }
 
 fn compile_regex(pattern: Either<String, RegExpShape>) -> Result<Regex> {
@@ -384,9 +432,7 @@ fn compile_regex(pattern: Either<String, RegExpShape>) -> Result<Regex> {
             }
         }
     }
-    builder
-        .build()
-        .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    builder.build().into_napi()
 }
 
 fn build_schema(input: HashMap<String, TagSchemaShape>) -> Result<marxml::Schema> {
@@ -425,9 +471,7 @@ fn build_schema(input: HashMap<String, TagSchemaShape>) -> Result<marxml::Schema
             tb
         });
     }
-    builder
-        .try_build()
-        .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    builder.try_build().into_napi()
 }
 
 fn error_kind(e: &marxml::ValidationError) -> &'static str {

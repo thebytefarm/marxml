@@ -1,7 +1,7 @@
 //! Validate a parsed [`Markdown`] against a [`Schema`].
 
 use std::collections::{BTreeSet, HashMap};
-use std::fmt::Write as _;
+use std::fmt;
 
 use thiserror::Error;
 
@@ -27,7 +27,7 @@ pub enum ValidationError {
     },
     /// An attribute was present but its value didn't satisfy the schema
     /// (failed an enum/regex check).
-    #[error("line {line}: <{tag}> attribute {attr} has invalid value {value:?} ({reason})")]
+    #[error("line {line}: <{tag}> attribute {attr} has invalid value {value:?} ({kind})")]
     InvalidAttr {
         /// Tag carrying the attribute.
         tag: String,
@@ -35,8 +35,9 @@ pub enum ValidationError {
         attr: String,
         /// Offending value, as stored on the element.
         value: String,
-        /// Short description of which constraint failed.
-        reason: String,
+        /// Specific constraint that failed, with the machine-readable
+        /// context the schema would otherwise bury in a string.
+        kind: InvalidAttrKind,
         /// 1-based source line.
         line: u32,
     },
@@ -70,6 +71,49 @@ pub enum ValidationError {
         /// 1-based source line.
         line: u32,
     },
+}
+
+/// Which constraint inside a [`ValidationError::InvalidAttr`] failed.
+///
+/// The `Display` impl reproduces the legacy `"expected one of [...]"` /
+/// `"did not match regex /…/"` rendering, so log lines and snapshot tests
+/// see byte-identical output. Programmatic consumers (LSP servers, UI
+/// surfacing) can `match` on the variant to recover the allowed set or
+/// the pattern without re-parsing the message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum InvalidAttrKind {
+    /// The value was not in the schema's enum allowlist.
+    NotInEnum {
+        /// Values the schema permits, in stable lexical order.
+        allowed: Vec<String>,
+    },
+    /// The value failed the schema's regex constraint.
+    NoRegexMatch {
+        /// The pattern source, as supplied to [`crate::AttrKind::Regex`]
+        /// (without the implicit `\A(?:…)\z` anchors).
+        pattern: String,
+    },
+}
+
+impl fmt::Display for InvalidAttrKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotInEnum { allowed } => {
+                f.write_str("expected one of [")?;
+                let mut first = true;
+                for v in allowed {
+                    if !first {
+                        f.write_str(", ")?;
+                    }
+                    first = false;
+                    write!(f, "{v:?}")?;
+                }
+                f.write_str("]")
+            }
+            Self::NoRegexMatch { pattern } => write!(f, "did not match regex /{pattern}/"),
+        }
+    }
 }
 
 /// Outcome of [`validate`].
@@ -216,12 +260,12 @@ fn check_element(
                 }
             }
             Some(v) => {
-                if let Some(reason) = check_kind(&constraint.kind, v) {
+                if let Some(kind) = check_kind(&constraint.kind, v) {
                     errors.push(ValidationError::InvalidAttr {
                         tag: node.tag.clone(),
                         attr: attr_name.clone(),
                         value: v.to_string(),
-                        reason,
+                        kind,
                         line,
                     });
                 }
@@ -268,31 +312,25 @@ fn check_element(
     }
 }
 
-fn check_kind(kind: &CompiledAttrKind, value: &str) -> Option<String> {
+fn check_kind(kind: &CompiledAttrKind, value: &str) -> Option<InvalidAttrKind> {
     match kind {
         CompiledAttrKind::String => None,
         CompiledAttrKind::Enum(allowed) => {
             if allowed.contains(value) {
                 None
             } else {
-                let mut msg = String::from("expected one of [");
-                let mut first = true;
-                for v in allowed {
-                    if !first {
-                        msg.push_str(", ");
-                    }
-                    first = false;
-                    let _ = write!(msg, "{v:?}");
-                }
-                msg.push(']');
-                Some(msg)
+                Some(InvalidAttrKind::NotInEnum {
+                    allowed: allowed.iter().cloned().collect(),
+                })
             }
         }
         CompiledAttrKind::Regex(re) => {
             if re.is_match(value) {
                 None
             } else {
-                Some(format!("did not match regex /{}/", re.as_str()))
+                Some(InvalidAttrKind::NoRegexMatch {
+                    pattern: re.as_str().to_string(),
+                })
             }
         }
     }

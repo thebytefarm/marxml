@@ -201,7 +201,7 @@ impl Markdown {
     /// rewritten output alongside the counts.
     #[must_use]
     pub fn replace_content_report(&self, sel: &Selector, new_body: &str) -> crate::MutationReport {
-        mutate::try_replace_content(self, sel, new_body)
+        mutate::splice_content_report(self, sel, new_body)
     }
 
     /// Like [`Self::replace_in`] but returns a [`crate::MutationReport`].
@@ -214,13 +214,20 @@ impl Markdown {
         pattern: &Regex,
         replacement: &str,
     ) -> crate::MutationReport {
-        mutate::try_replace_in(self, sel, pattern, replacement)
+        mutate::splice_regex_report(self, sel, pattern, replacement)
     }
 
     /// Serialize the parsed XML elements back to a flat XML string.
     ///
     /// Surrounding markdown text is dropped — this is just the structured
     /// payload. Pass [`crate::SerializeOpts::pretty`] for indented multi-line output.
+    ///
+    /// **Not byte-preserving.** Unlike the [mutators](Self::update), `to_xml`
+    /// re-emits each element from the parsed tree (attribute ordering,
+    /// whitespace, and escape form follow the [`SerializeOpts`] options
+    /// rather than the original bytes). [`SourcePosition`](crate::SourcePosition)
+    /// values from the source document do **not** apply to the output —
+    /// reparsing `to_xml`'s output produces a fresh set of byte offsets.
     ///
     /// ```
     /// let doc = marxml::parse("# heading\n\n<task id=\"1\"/>")?;

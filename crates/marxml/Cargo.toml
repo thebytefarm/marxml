@@ -17,6 +17,10 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 regex = { workspace = true }
 serde = { workspace = true }

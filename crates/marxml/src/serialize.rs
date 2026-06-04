@@ -93,7 +93,11 @@ impl SerializeOpts {
 }
 
 pub(crate) fn to_xml(doc: &Markdown, opts: &SerializeOpts) -> String {
-    let mut out = String::new();
+    // Re-serialization is usually shorter than `raw` (we drop interleaved
+    // markdown prose) but for escape-heavy attributes it can grow modestly.
+    // `raw.len()` is a sane starting capacity that avoids the doubling chain
+    // on a multi-root document.
+    let mut out = String::with_capacity(doc.raw().len());
     for (i, root) in doc.roots_internal().iter().enumerate() {
         if i > 0 && opts.indent.is_some() {
             out.push('\n');

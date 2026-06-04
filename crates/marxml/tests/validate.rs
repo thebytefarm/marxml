@@ -95,7 +95,10 @@ fn regex_constraint_rejects_non_matching_value() {
     let errors = validate(&doc, &schema).errors().to_vec();
     assert!(errors.iter().any(|e| matches!(
         e,
-        ValidationError::InvalidAttr { reason, .. } if reason.contains("regex")
+        ValidationError::InvalidAttr {
+            kind: marxml::InvalidAttrKind::NoRegexMatch { .. },
+            ..
+        }
     )));
 }
 

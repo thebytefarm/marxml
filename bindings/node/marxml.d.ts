@@ -98,8 +98,11 @@ export interface MarkdownDoc {
   toXml(opts?: ToXmlOpts): string
 
   /**
-   * Serialize the element tree as a JSON value (already parsed; no string
-   * round-trip needed at the call site).
+   * Serialize the element tree as a JSON value. The native binding emits a
+   * JSON string which the wrapper at `marxml.mjs` parses for you — at the
+   * call site you receive a structured value, but the cost is two passes
+   * (one Rust-side serialize, one V8 `JSON.parse`). For large documents
+   * prefer `toXml({ pretty: false })` if you only need a serialized form.
    *
    * Top-level is an array of root elements. Each element carries
    * `tag` / `attrs` / `text` / `children` / `selfClosing` / `location`.
