@@ -1,0 +1,16 @@
+{
+  "name": "example-simple",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "marxml": "link:../../bindings/node"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "typescript": "^5.6.0"
+  }
+}

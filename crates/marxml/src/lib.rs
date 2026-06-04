@@ -26,8 +26,6 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/marxml/0.0.0")]
-
 mod document;
 mod error;
 mod escape;

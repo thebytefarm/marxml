@@ -325,6 +325,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "example-advanced"
+version = "0.0.0"
+dependencies = [
+ "marxml",
+]
+
+[[package]]
+name = "example-simple"
+version = "0.0.0"
+dependencies = [
+ "marxml",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

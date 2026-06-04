@@ -89,8 +89,8 @@ The mutation API is intentionally not an AST rewriter. The three methods (`updat
 
 1. Run the selector to identify matching elements.
 2. Compute the byte range to splice for each match.
-3. Sort splices by *descending* start offset so earlier mutations don't shift later positions.
-4. Apply replacements in that order on a fresh `String` clone of the raw.
+3. Sort splices ascending by start offset (with descending tie-break on end so the widest splice at a given start wins).
+4. Walk the splices left-to-right with a monotonic cursor: copy untouched bytes between splices verbatim into a fresh output `String`, then push each replacement in place. Overlapping splices (the next splice's start is before the cursor) are skipped and counted in `MutationReport::skipped_overlaps`.
 
 Why string-splicing instead of AST rewrite + re-serialize?
 
