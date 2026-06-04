@@ -36,6 +36,15 @@ name = "prepare-release"
 [[workflows.steps]]
 type = "PrepareRelease"
 
+## Sync Cargo.lock to the bumped workspace version. `PrepareRelease` rewrites
+## `[workspace.package].version` in Cargo.toml but doesn't touch Cargo.lock,
+## so without this step the lock keeps drifting (0.1.0 while toml says 0.1.2)
+## and has to be hand-synced in a later commit. `--workspace` scopes the
+## update to workspace members only — transitive deps stay pinned.
+[[workflows.steps]]
+type = "Command"
+command = "cargo update --workspace"
+
 [[workflows.steps]]
 type = "Command"
 command = "git switch -c release/$version"
