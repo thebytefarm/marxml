@@ -1,7 +1,14 @@
-//! rust-advanced — selector reuse, mutation, validation, pretty serialize.
+//! rust-advanced — selector reuse, mutation, validation, structured serialize.
 //!
-//! Reads samples/plan.md (never modified) and writes the rewritten document
-//! to out/plan.xml. Run `../reset.sh` to clear out/.
+//! Reads samples/plan.md (a real markdown document with embedded XML),
+//! mutates it surgically, and writes two outputs:
+//!
+//! - `out/plan.md`  — full markdown document with edits applied. Headings,
+//!   bullets, and prose are byte-preserved; only the inside of `<task>` /
+//!   `<phase>` tags changes. Still renders cleanly on GitHub.
+//! - `out/plan.xml` — structured payload, via `to_xml(SerializeOpts::structured())`.
+//!   Single `<markdown>` root, indented, markdown noise stripped between
+//!   siblings. Valid XML document (passes `xmllint`).
 //!
 //! From the repo root:
 //!
@@ -30,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("total:   {}", doc.select(&everything).count());
 
     // (1) Mark every "todo" task as "done". `update` returns a new String —
-    // the original doc is unchanged.
+    // markdown prose, headings, and bullets come back unchanged.
     let after_update = doc.update(&pending, &[("status", "done")]);
 
     // Mutators return Strings; re-parse to chain further mutations.
@@ -66,15 +73,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // (4) Pretty XML written to out/.
     let out_dir = root.join("out");
     fs::create_dir_all(&out_dir)?;
-    let xml = doc3.to_xml(&SerializeOpts::pretty());
-    let out_path = out_dir.join("plan.xml");
-    fs::write(&out_path, &xml)?;
-    println!("\nwrote {} ({} bytes)", out_path.display(), xml.len());
 
-    println!("\n-- preview --\n{xml}");
+    // (4a) Full markdown document with surgical edits. `raw()` is the source
+    // string the latest re-parse was built from — i.e. the post-mutation
+    // markdown, with every byte outside the touched tags identical to the
+    // input.
+    let md_path = out_dir.join("plan.md");
+    fs::write(&md_path, doc3.raw())?;
+    println!(
+        "\nwrote {} ({} bytes) — full markdown with edits",
+        md_path.display(),
+        doc3.raw().len()
+    );
+
+    // (4b) Structured payload as a single-root, valid XML document.
+    // `structured()` wraps in `<markdown>` and drops the markdown noise
+    // between sibling tags.
+    let xml = doc3.to_xml(&SerializeOpts::structured());
+    let xml_path = out_dir.join("plan.xml");
+    fs::write(&xml_path, &xml)?;
+    println!(
+        "wrote {} ({} bytes) — structured XML extract",
+        xml_path.display(),
+        xml.len()
+    );
+
+    println!("\n-- markdown preview (out/plan.md) --\n{}", doc3.raw());
+    println!("\n-- xml preview (out/plan.xml) --\n{xml}");
 
     Ok(())
 }

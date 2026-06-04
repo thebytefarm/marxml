@@ -180,6 +180,35 @@ describe('toXml', () => {
     const doc = parse('<root><a/><b/></root>')
     expect(doc.toXml({ pretty: true })).toBe('<root>\n  <a/>\n  <b/>\n</root>')
   })
+
+  it('stripText drops markdown noise between siblings', () => {
+    const doc = parse('<phase>\nprose\n<task id="1"/>\nmore prose\n<task id="2"/>\n</phase>')
+    const out = doc.toXml({ pretty: true, stripText: true })
+    expect(out).toBe('<phase>\n  <task id="1"/>\n  <task id="2"/>\n</phase>')
+  })
+
+  it('wrapIn produces a single-root document', () => {
+    const doc = parse('<a/><b/>')
+    const out = doc.toXml({ pretty: true, wrapIn: 'doc' })
+    expect(out).toBe('<doc>\n  <a/>\n  <b/>\n</doc>')
+  })
+
+  it('structured: true is a shortcut for the clean valid-XML shape', () => {
+    const doc = parse('<phase>\nprose\n<task id="1"/>\n</phase>\n\n<phase>\n<task id="2"/>\n</phase>')
+    const out = doc.toXml({ structured: true })
+    expect(out.startsWith('<markdown>')).toBe(true)
+    expect(out.endsWith('</markdown>')).toBe(true)
+    expect(out.includes('prose')).toBe(false)
+    expect(out.includes('<task id="1"/>')).toBe(true)
+    expect(out.includes('<task id="2"/>')).toBe(true)
+  })
+
+  it('structured + wrapIn lets callers override the wrapper name', () => {
+    const doc = parse('<a/>')
+    const out = doc.toXml({ structured: true, wrapIn: 'plan' })
+    expect(out.startsWith('<plan>')).toBe(true)
+    expect(out.endsWith('</plan>')).toBe(true)
+  })
 })
 
 describe('toJson', () => {

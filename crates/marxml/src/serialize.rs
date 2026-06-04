@@ -40,6 +40,25 @@ pub struct SerializeOpts {
     /// (`<tag/>`). When false, they stay as `<tag></tag>` unless the source
     /// already used self-close syntax.
     pub self_close_empty: bool,
+    /// When true, drop non-whitespace text that appears *between* child
+    /// elements. The text *inside* leaf elements (`<task>body</task>`) is
+    /// kept either way.
+    ///
+    /// Set this when the parsed document is markdown that embeds XML, and
+    /// the markdown prose between sibling tags is noise you don't want in
+    /// the serialized output. Default `false` preserves the byte-fidelity
+    /// behavior — useful for HTML-style mixed content like
+    /// `<p>before <em>middle</em> after</p>`.
+    pub strip_text: bool,
+    /// When set, wrap the serialized output in a single synthetic root
+    /// element with this tag name. Use this to turn a multi-root document
+    /// (the common case for markdown that scatters several XML tags
+    /// through prose) into a single-root, well-formed XML document.
+    ///
+    /// `None` (the default) emits the roots concatenated — an XML
+    /// *fragment*, valid as content inside another element but rejected
+    /// by strict XML document parsers.
+    pub wrap_in: Option<String>,
 }
 
 impl SerializeOpts {
@@ -57,7 +76,22 @@ impl SerializeOpts {
         Self {
             indent: Some("  ".to_string()),
             self_close_empty: true,
+            ..Self::default()
         }
+    }
+
+    /// Pretty-print + drop inter-element text + wrap in a `<markdown>` root.
+    /// Produces a single-root, well-formed XML *document* with no markdown
+    /// noise — the right shape when the parsed input is markdown that
+    /// embeds XML and you want a clean structured extract.
+    ///
+    /// Equivalent to:
+    /// `SerializeOpts::pretty().strip_text(true).with_root("markdown")`.
+    /// Override the wrapping element with [`Self::with_root`] if you want
+    /// a domain-specific name.
+    #[must_use]
+    pub fn structured() -> Self {
+        Self::pretty().strip_text(true).with_root("markdown")
     }
 
     /// Set the indentation prefix; each nested child is prefixed with one
@@ -90,6 +124,22 @@ impl SerializeOpts {
         self.self_close_empty = false;
         self
     }
+
+    /// Toggle [`Self::strip_text`].
+    #[must_use]
+    pub fn strip_text(mut self, on: bool) -> Self {
+        self.strip_text = on;
+        self
+    }
+
+    /// Wrap the output in a `<name>...</name>` root element. Pair with
+    /// [`Self::strip_text`] (or use [`Self::structured`]) to get a clean,
+    /// single-root XML document from a multi-root parsed input.
+    #[must_use]
+    pub fn with_root(mut self, name: impl Into<String>) -> Self {
+        self.wrap_in = Some(name.into());
+        self
+    }
 }
 
 pub(crate) fn to_xml(doc: &Markdown, opts: &SerializeOpts) -> String {
@@ -98,11 +148,26 @@ pub(crate) fn to_xml(doc: &Markdown, opts: &SerializeOpts) -> String {
     // `raw.len()` is a sane starting capacity that avoids the doubling chain
     // on a multi-root document.
     let mut out = String::with_capacity(doc.raw().len());
+    let wrap = opts.wrap_in.as_deref();
+    let inner_depth = usize::from(wrap.is_some());
+    if let Some(name) = wrap {
+        out.push('<');
+        out.push_str(name);
+        out.push('>');
+    }
     for (i, root) in doc.roots_internal().iter().enumerate() {
-        if i > 0 && opts.indent.is_some() {
+        if (i > 0 || wrap.is_some()) && opts.indent.is_some() {
             out.push('\n');
         }
-        emit_element(root, doc.raw(), doc.trivia(), opts, 0, &mut out);
+        emit_element(root, doc.raw(), doc.trivia(), opts, inner_depth, &mut out);
+    }
+    if let Some(name) = wrap {
+        if opts.indent.is_some() {
+            out.push('\n');
+        }
+        out.push_str("</");
+        out.push_str(name);
+        out.push('>');
     }
     out
 }
@@ -184,11 +249,20 @@ fn emit_tight_children(
     for child in &el.children {
         let child_start = child.span.start.offset_usize();
         let segment_end = child_start.min(body_end);
-        push_escaped_text_skipping_trivia(raw, cursor, segment_end, trivia, &mut trivia_idx, out);
+        if !opts.strip_text {
+            push_escaped_text_skipping_trivia(
+                raw,
+                cursor,
+                segment_end,
+                trivia,
+                &mut trivia_idx,
+                out,
+            );
+        }
         emit_element(child, raw, trivia, opts, depth + 1, out);
         cursor = child.span.end.offset_usize();
     }
-    if cursor < body_end {
+    if cursor < body_end && !opts.strip_text {
         push_escaped_text_skipping_trivia(raw, cursor, body_end, trivia, &mut trivia_idx, out);
     }
 }
@@ -246,7 +320,7 @@ fn emit_pretty_children(
     out: &mut String,
 ) {
     let has_inline_text = text_with_trivia(raw, el, trivia).any(|s| !is_xml_whitespace_only(s));
-    if has_inline_text {
+    if has_inline_text && !opts.strip_text {
         // Mixed content: emit text segments (escaped, trivia-skipped)
         // interleaved with re-emitted children. Disable indent for the
         // sub-tree so children don't have indentation injected into the
@@ -255,11 +329,13 @@ fn emit_pretty_children(
         let tight = SerializeOpts {
             indent: None,
             self_close_empty: opts.self_close_empty,
+            ..opts.clone()
         };
         emit_tight_children(el, raw, trivia, &tight, depth, out);
         return;
     }
-    // Pure-structure children: emit each on its own indented line.
+    // Pure-structure children (either no inline text, OR strip_text=true).
+    // Emit each child on its own indented line.
     for child in &el.children {
         out.push('\n');
         emit_element(child, raw, trivia, opts, depth + 1, out);

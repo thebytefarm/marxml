@@ -234,6 +234,18 @@ pub struct TagSchemaShape {
 pub struct ToXmlOpts {
     /// When `true`, emit indented multi-line output. Default `false`.
     pub pretty: Option<bool>,
+    /// When `true`, drop non-whitespace text between sibling child
+    /// elements. Default `false`. Useful when the parsed document is
+    /// markdown that embeds XML and you want to strip the prose noise.
+    pub strip_text: Option<bool>,
+    /// When set, wrap the output in a `<name>...</name>` root. Use to
+    /// turn a multi-root document into a single-root, well-formed XML
+    /// document. Pair with `strip_text` (or use `structured: true`).
+    pub wrap_in: Option<String>,
+    /// Convenience shortcut: when `true`, emit a single-root structured
+    /// XML document (pretty + `strip_text` + `wrap_in` of `"markdown"`).
+    /// Override the wrapper name by also setting `wrap_in`.
+    pub structured: Option<bool>,
 }
 
 // ─── The native handle ────────────────────────────────────────────────────
@@ -339,14 +351,13 @@ impl NativeMarkdown {
 
     /// Serialize the parsed XML elements back to a string. Surrounding
     /// markdown prose is dropped — this is just the structured payload.
+    ///
+    /// Options: `pretty` (indent), `strip_text` (drop inter-element
+    /// markdown noise), `wrap_in` (synthetic root for valid XML doc),
+    /// `structured` (shortcut for all three with `wrap_in: "markdown"`).
     #[napi]
     pub fn to_xml(&self, opts: Option<ToXmlOpts>) -> Result<String> {
-        let pretty = opts.and_then(|o| o.pretty).unwrap_or(false);
-        let serialize_opts = if pretty {
-            marxml::SerializeOpts::pretty()
-        } else {
-            marxml::SerializeOpts::default()
-        };
+        let serialize_opts = resolve_opts(opts).unwrap_or_default();
         Ok(self.inner.to_xml(&serialize_opts))
     }
 
@@ -472,6 +483,39 @@ fn build_schema(input: HashMap<String, TagSchemaShape>) -> Result<marxml::Schema
         });
     }
     builder.try_build().into_napi()
+}
+
+/// Convert the napi-side `ToXmlOpts` (used by every serializer entry point)
+/// into a `marxml::SerializeOpts`.
+///
+/// Returns `None` when the caller passed no options at all, so the Rust
+/// side can fast-path to the arg-less `to_json` / `to_yaml` and avoid the
+/// no-op `to_xml_with`/`to_json_with`/`to_yaml_with` rebuild on the hot
+/// path. Returns `Some` when any field is set.
+fn resolve_opts(opts: Option<ToXmlOpts>) -> Option<marxml::SerializeOpts> {
+    let opts = opts?;
+    let none_set = opts.pretty.is_none()
+        && opts.strip_text.is_none()
+        && opts.wrap_in.is_none()
+        && opts.structured.is_none();
+    if none_set {
+        return None;
+    }
+    let structured = opts.structured.unwrap_or(false);
+    let mut serialize_opts = if structured {
+        marxml::SerializeOpts::structured()
+    } else if opts.pretty.unwrap_or(false) {
+        marxml::SerializeOpts::pretty()
+    } else {
+        marxml::SerializeOpts::default()
+    };
+    if let Some(on) = opts.strip_text {
+        serialize_opts = serialize_opts.strip_text(on);
+    }
+    if let Some(name) = opts.wrap_in {
+        serialize_opts = serialize_opts.with_root(name);
+    }
+    Some(serialize_opts)
 }
 
 fn error_kind(e: &marxml::ValidationError) -> &'static str {

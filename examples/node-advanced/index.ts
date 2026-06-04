@@ -1,7 +1,15 @@
-// node-advanced — selector reuse, mutation, validation, pretty serialize.
+// node-advanced — selector reuse, mutation, validation, structured serialize.
 //
-// Reads samples/plan.md (never modified) and writes the rewritten document
-// to out/plan.xml. Run ../reset.sh to clear out/.
+// Reads samples/plan.md (a real markdown document with embedded XML),
+// mutates it surgically, and writes two outputs:
+//
+// - out/plan.md  — full markdown document with edits applied. Headings,
+//                  bullets, and prose are byte-preserved; only the inside
+//                  of <task> / <phase> tags changes. Still renders cleanly
+//                  on GitHub.
+// - out/plan.xml — structured payload via toXml({ structured: true }). Single
+//                  <markdown> root, indented, markdown noise stripped between
+//                  siblings. Valid XML document (passes xmllint).
 //
 // From examples/node-advanced/:
 //   pnpm install
@@ -26,7 +34,7 @@ console.log(`pending: ${doc.select(PENDING).length}`)
 console.log(`total:   ${doc.select('task').length}`)
 
 // (1) Mark every "todo" task as "done". updateAttrs returns the rewritten
-// document. The handle is unchanged.
+// document. Markdown prose, headings, and bullets come back unchanged.
 const afterUpdate = doc.updateAttrs(PENDING, [{ name: 'status', value: 'done' }])
 
 // Mutators return strings; re-parse to chain further mutations.
@@ -70,12 +78,23 @@ if (report.valid) {
   }
 }
 
-// (4) Pretty XML written to out/.
 mkdirSync(OUT_DIR, { recursive: true })
-const xml = doc3.toXml({ pretty: true })
-const outPath = resolve(OUT_DIR, 'plan.xml')
-writeFileSync(outPath, xml)
-console.log(`\nwrote ${outPath} (${xml.length} bytes)`)
 
-console.log('\n-- preview --')
+// (4a) Full markdown document with surgical edits. `raw` is the source the
+// most recent parse was built from — i.e. the post-mutation markdown, with
+// every byte outside the touched tags identical to the input.
+const mdPath = resolve(OUT_DIR, 'plan.md')
+writeFileSync(mdPath, doc3.raw)
+console.log(`\nwrote ${mdPath} (${doc3.raw.length} bytes) — full markdown with edits`)
+
+// (4b) Structured payload as a single-root, valid XML document.
+// `structured: true` = pretty + stripText + wrapIn:"markdown".
+const xml = doc3.toXml({ structured: true })
+const xmlPath = resolve(OUT_DIR, 'plan.xml')
+writeFileSync(xmlPath, xml)
+console.log(`wrote ${xmlPath} (${xml.length} bytes) — structured XML extract`)
+
+console.log('\n-- markdown preview (out/plan.md) --')
+console.log(doc3.raw)
+console.log('\n-- xml preview (out/plan.xml) --')
 console.log(xml)

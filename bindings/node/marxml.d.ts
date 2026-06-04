@@ -93,16 +93,21 @@ export interface MarkdownDoc {
    * Serialize the parsed XML elements back to a string. Surrounding
    * markdown prose is dropped — this is just the structured payload.
    *
-   * Pass `{ pretty: true }` for indented multi-line output.
+   * Options:
+   * - `pretty` — indented multi-line output.
+   * - `stripText` — drop non-whitespace text between sibling tags
+   *   (markdown noise that would otherwise appear as XML mixed content).
+   * - `wrapIn` — wrap output in `<name>...</name>` so a multi-root
+   *   document becomes a single-root, well-formed XML *document*.
+   * - `structured` — convenience shortcut equivalent to
+   *   `{ pretty: true, stripText: true, wrapIn: "markdown" }`. Pass
+   *   `wrapIn` alongside to override the wrapper name.
    */
   toXml(opts?: ToXmlOpts): string
 
   /**
-   * Serialize the element tree as a JSON value. The native binding emits a
-   * JSON string which the wrapper at `marxml.mjs` parses for you — at the
-   * call site you receive a structured value, but the cost is two passes
-   * (one Rust-side serialize, one V8 `JSON.parse`). For large documents
-   * prefer `toXml({ pretty: false })` if you only need a serialized form.
+   * Serialize the element tree as a JSON value (already parsed; no string
+   * round-trip needed at the call site).
    *
    * Top-level is an array of root elements. Each element carries
    * `tag` / `attrs` / `text` / `children` / `selfClosing` / `location`.
