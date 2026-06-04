@@ -15,12 +15,16 @@
 //!   [`SerializeOpts`] — render the parsed tree back out.
 //!
 //! ```
-//! let doc = marxml::parse("<task id=\"1\">hello</task>")?;
+//! use marxml::{parse, Selector};
+//!
+//! let doc = parse(r#"<task id="1" status="todo">write tests</task>"#)?;
 //! assert_eq!(doc.root_count(), 1);
-//! # Ok::<(), marxml::ParseError>(())
+//!
+//! let sel = Selector::parse(r#"task[status="todo"]"#)?;
+//! let updated = doc.update(&sel, &[("status", "done")]);
+//! assert!(updated.contains(r#"status="done""#));
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
-
-#![doc(html_root_url = "https://docs.rs/marxml/0.0.0")]
 
 mod document;
 mod error;
@@ -35,15 +39,15 @@ mod types;
 mod validate;
 
 pub use document::Markdown;
-pub use error::ParseError;
+pub use error::{MalformedAttrKind, MalformedTagKind, ParseError};
 pub use escape::{escape_attr, escape_text, is_valid_name};
 pub use mutate::{MutateError, MutationReport};
 pub use parse::{parse, parse_fragment, parse_owned, MAX_DEPTH, MAX_INPUT_BYTES};
 pub use schema::{AttrConstraint, AttrKind, Schema, SchemaBuilder, SchemaError, TagBuilder};
-pub use selector::{Selector, SelectorError};
+pub use selector::{Selector, SelectorError, SyntaxKind};
 pub use serialize::SerializeOpts;
 pub use types::{ElementRef, SourcePosition, SourceSpan};
-pub use validate::{validate, ValidationError, ValidationReport};
+pub use validate::{validate, InvalidAttrKind, ValidationError, ValidationReport};
 
 /// Crate version exposed for downstream diagnostics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

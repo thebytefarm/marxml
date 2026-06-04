@@ -19,7 +19,7 @@
 
 use std::collections::HashSet;
 
-use crate::error::ParseError;
+use crate::error::{MalformedAttrKind, MalformedTagKind, ParseError};
 use crate::escape::{decode_entities, is_name_char, is_name_start};
 use crate::types::{SourcePosition, SourceSpan};
 
@@ -180,7 +180,7 @@ fn parse_end_tag(
     skip_ws(bytes, &mut i, &mut line);
     if i >= bytes.len() || bytes[i] != b'>' {
         return Err(ParseError::MalformedTag {
-            reason: format!("expected '>' to close </{name}>"),
+            kind: MalformedTagKind::ExpectedCloseAngle { tag: name },
             line: start_line,
         });
     }
@@ -296,7 +296,9 @@ fn parse_attribute_list(
         skip_ws(bytes, &mut i, &mut line);
         if i >= bytes.len() {
             return Err(ParseError::MalformedTag {
-                reason: format!("<{tag_name}> not terminated"),
+                kind: MalformedTagKind::UnterminatedOpenTag {
+                    tag: tag_name.to_string(),
+                },
                 line: tag_start_line,
             });
         }
@@ -313,7 +315,9 @@ fn parse_attribute_list(
                 i += 1;
                 if i >= bytes.len() || bytes[i] != b'>' {
                     return Err(ParseError::MalformedTag {
-                        reason: format!("expected '>' after '/' in <{tag_name}/>"),
+                        kind: MalformedTagKind::ExpectedCloseSlashAngle {
+                            tag: tag_name.to_string(),
+                        },
                         line: tag_start_line,
                     });
                 }
@@ -369,10 +373,7 @@ fn record_seen_attr(
     if attrs.len() + 1 < ATTR_DUP_SET_THRESHOLD {
         return;
     }
-    let mut set: HashSet<String> = HashSet::with_capacity(attrs.len() + 1);
-    for (k, _) in attrs {
-        set.insert(k.clone());
-    }
+    let mut set: HashSet<String> = attrs.iter().map(|(k, _)| k.clone()).collect();
     set.insert(next_key.to_string());
     *seen = Some(set);
 }
@@ -403,10 +404,9 @@ fn parse_attribute(
     if i >= bytes.len() || !is_name_start(bytes[i]) {
         return Err(ParseError::MalformedAttribute {
             tag: tag_name.to_string(),
-            reason: format!(
-                "unexpected character {:?} at start of attribute name",
-                next_char_at(input, i).unwrap_or('\0')
-            ),
+            kind: MalformedAttrKind::UnexpectedNameStart {
+                found: next_char_at(input, i).unwrap_or('\0'),
+            },
             line,
         });
     }
@@ -420,7 +420,7 @@ fn parse_attribute(
     if i >= bytes.len() || bytes[i] != b'=' {
         return Err(ParseError::MalformedAttribute {
             tag: tag_name.to_string(),
-            reason: format!("expected '=' after attribute {key}"),
+            kind: MalformedAttrKind::ExpectedEquals { attr: key },
             line,
         });
     }
@@ -429,7 +429,7 @@ fn parse_attribute(
     if i >= bytes.len() || bytes[i] != b'"' {
         return Err(ParseError::MalformedAttribute {
             tag: tag_name.to_string(),
-            reason: format!("expected '\"' to open value of {key}"),
+            kind: MalformedAttrKind::ExpectedOpenQuote { attr: key },
             line,
         });
     }
@@ -443,10 +443,14 @@ fn parse_attribute(
         i += 1;
     }
     if i >= bytes.len() {
+        // Use `line` (advanced through every '\n' in the value scan) rather
+        // than `start_line` (the attribute-name line) so the diagnostic
+        // points at the line where input ran out, not at the attribute name
+        // potentially many lines above.
         return Err(ParseError::MalformedAttribute {
             tag: tag_name.to_string(),
-            reason: format!("unterminated value of {key}"),
-            line: start_line,
+            kind: MalformedAttrKind::UnterminatedValue { attr: key },
+            line,
         });
     }
     // Decode the five XML predefined entities + numeric character references
@@ -476,8 +480,8 @@ fn try_skip_comment(
         return Ok(None);
     }
     scan_to_terminator(bytes, start + 4, start_line, b"-->")
-        .ok_or_else(|| ParseError::MalformedTag {
-            reason: "unterminated <!-- comment".to_string(),
+        .ok_or(ParseError::MalformedTag {
+            kind: MalformedTagKind::UnterminatedComment,
             line: start_line,
         })
         .map(Some)
@@ -495,8 +499,8 @@ fn try_skip_cdata(
         return Ok(None);
     }
     scan_to_terminator(bytes, start + 9, start_line, b"]]>")
-        .ok_or_else(|| ParseError::MalformedTag {
-            reason: "unterminated <![CDATA[ section".to_string(),
+        .ok_or(ParseError::MalformedTag {
+            kind: MalformedTagKind::UnterminatedCdata,
             line: start_line,
         })
         .map(Some)
@@ -541,5 +545,120 @@ fn skip_ws(bytes: &[u8], i: &mut usize, line: &mut u32) {
             *line = line.saturating_add(1);
         }
         *i += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn looks_like_tag_start_accepts_name_and_slash_name() {
+        assert!(looks_like_tag_start(b"a>", 0));
+        assert!(looks_like_tag_start(b"_x>", 0));
+        assert!(looks_like_tag_start(b"/a>", 0));
+    }
+
+    #[test]
+    fn looks_like_tag_start_rejects_prose_lt() {
+        // The cases that let `if x < 3` and `a <  b` survive parsing as
+        // literal text instead of erroring out.
+        assert!(!looks_like_tag_start(b" 3", 0));
+        assert!(!looks_like_tag_start(b"3", 0));
+        assert!(!looks_like_tag_start(b"/", 0)); // `</` with nothing after
+        assert!(!looks_like_tag_start(b"/ ", 0)); // `</ ` — slash then non-name
+        assert!(!looks_like_tag_start(b"", 0)); // EOF after `<`
+    }
+
+    #[test]
+    fn skip_ws_counts_newlines() {
+        let bytes = b" \t\n\n  x";
+        let mut i = 0;
+        let mut line = 1;
+        skip_ws(bytes, &mut i, &mut line);
+        assert_eq!(i, 6);
+        assert_eq!(line, 3);
+    }
+
+    #[test]
+    fn scan_to_terminator_advances_line_through_newlines() {
+        let bytes = b"abc\ndef\n-->tail";
+        let hit = scan_to_terminator(bytes, 0, 1, b"-->");
+        // Index past `-->`, line counter advanced by two newlines.
+        assert_eq!(hit, Some((11, 3)));
+    }
+
+    #[test]
+    fn scan_to_terminator_returns_none_on_eof() {
+        let bytes = b"abc no end";
+        assert!(scan_to_terminator(bytes, 0, 1, b"-->").is_none());
+    }
+
+    #[test]
+    fn try_skip_comment_returns_none_for_non_comment() {
+        let bytes = b"<task/>";
+        assert!(matches!(try_skip_comment(bytes, 0, 1), Ok(None)));
+    }
+
+    #[test]
+    fn try_skip_comment_consumes_to_terminator() {
+        let bytes = b"<!-- hi -->after";
+        let (end, line) = try_skip_comment(bytes, 0, 1).unwrap().unwrap();
+        assert_eq!(end, 11);
+        assert_eq!(line, 1);
+    }
+
+    #[test]
+    fn try_skip_comment_errors_on_unterminated() {
+        let bytes = b"<!-- forever";
+        let err = try_skip_comment(bytes, 0, 1).unwrap_err();
+        assert!(matches!(err, ParseError::MalformedTag { .. }));
+    }
+
+    #[test]
+    fn cdata_trivia_split_into_open_and_close_brackets() {
+        // The mutators rely on CDATA *content* falling through as text while
+        // only the `<![CDATA[` / `]]>` brackets register as trivia.
+        let input = "<![CDATA[hello]]>";
+        let stream = tokenize(input).unwrap();
+        assert!(stream.tokens.is_empty());
+        assert_eq!(stream.trivia.len(), 2);
+        assert_eq!(stream.trivia[0], 0..9); // `<![CDATA[`
+        assert_eq!(stream.trivia[1], 14..17); // `]]>`
+    }
+
+    #[test]
+    fn record_seen_attr_lazy_promotes_at_threshold() {
+        // Below threshold the set stays None so the linear-scan path is used.
+        let mut attrs: Vec<(String, String)> = Vec::new();
+        let mut seen: Option<HashSet<String>> = None;
+        for n in 0..ATTR_DUP_SET_THRESHOLD - 1 {
+            let key = format!("a{n}");
+            record_seen_attr(&attrs, &key, &mut seen);
+            attrs.push((key, String::new()));
+        }
+        assert!(seen.is_none(), "set should not promote before threshold");
+
+        // The insertion that pushes attrs.len() + 1 to the threshold triggers
+        // promotion and back-fills every prior key so duplicate lookups stay
+        // correct after the switch.
+        let final_key = format!("a{}", ATTR_DUP_SET_THRESHOLD - 1);
+        record_seen_attr(&attrs, &final_key, &mut seen);
+        let set = seen.as_ref().expect("set must be promoted at threshold");
+        assert_eq!(set.len(), ATTR_DUP_SET_THRESHOLD);
+        assert!(set.contains(&final_key));
+        assert!(set.contains("a0"));
+    }
+
+    #[test]
+    fn seen_attribute_uses_set_when_promoted() {
+        let attrs: Vec<(String, String)> = vec![("a".into(), "1".into())];
+        let mut set = HashSet::new();
+        set.insert("a".to_string());
+        assert!(seen_attribute(&attrs, Some(&set), "a"));
+        assert!(!seen_attribute(&attrs, Some(&set), "b"));
+        // And without a set, falls back to scanning attrs.
+        assert!(seen_attribute(&attrs, None, "a"));
+        assert!(!seen_attribute(&attrs, None, "b"));
     }
 }

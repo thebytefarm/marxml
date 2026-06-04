@@ -40,22 +40,24 @@ pub enum ParseError {
     },
 
     /// A tag was malformed — for example, an unterminated `<` at end of input
-    /// or an unquoted attribute value.
-    #[error("line {line}: malformed tag — {reason}")]
+    /// or an unquoted attribute value. `kind` discriminates the specific
+    /// failure mode; the `Display` impl renders a human message identical to
+    /// the legacy string format.
+    #[error("line {line}: malformed tag — {kind}")]
     MalformedTag {
-        /// Short description of what went wrong.
-        reason: String,
+        /// Specific failure mode.
+        kind: MalformedTagKind,
         /// 1-based line of the malformed tag.
         line: u32,
     },
 
     /// An element's attribute value was malformed (e.g. missing closing quote).
-    #[error("line {line}: malformed attribute on <{tag}> — {reason}")]
+    #[error("line {line}: malformed attribute on <{tag}> — {kind}")]
     MalformedAttribute {
         /// Tag name carrying the attribute.
         tag: String,
-        /// Short description of what went wrong.
-        reason: String,
+        /// Specific failure mode.
+        kind: MalformedAttrKind,
         /// 1-based line of the offending attribute.
         line: u32,
     },
@@ -134,4 +136,71 @@ impl ParseError {
             Self::InputTooLarge { .. } => None,
         }
     }
+}
+
+/// Specific kinds of [`ParseError::MalformedTag`].
+///
+/// Each variant carries enough context to render the diagnostic, but the
+/// failure mode is machine-matchable instead of being buried in a `String`.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MalformedTagKind {
+    /// `</name>` was missing its terminating `>`.
+    #[error("expected '>' to close </{tag}>")]
+    ExpectedCloseAngle {
+        /// Name in the closing position.
+        tag: String,
+    },
+    /// `<name …` reached end-of-input before any terminator.
+    #[error("<{tag}> not terminated")]
+    UnterminatedOpenTag {
+        /// Name of the open tag that never terminated.
+        tag: String,
+    },
+    /// `<name … /` was missing the `>` that completes a self-closing tag.
+    #[error("expected '>' after '/' in <{tag}/>")]
+    ExpectedCloseSlashAngle {
+        /// Name of the self-closing tag.
+        tag: String,
+    },
+    /// `<!--` was never closed by `-->`.
+    #[error("unterminated <!-- comment")]
+    UnterminatedComment,
+    /// `<![CDATA[` was never closed by `]]>`.
+    #[error("unterminated <![CDATA[ section")]
+    UnterminatedCdata,
+}
+
+/// Specific kinds of [`ParseError::MalformedAttribute`].
+///
+/// Each variant carries the attribute name (or the offending character) so
+/// callers can act on the failure without parsing a message string.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MalformedAttrKind {
+    /// Attribute name began with a character that is not a valid XML
+    /// name-start byte.
+    #[error("unexpected character {found:?} at start of attribute name")]
+    UnexpectedNameStart {
+        /// Character found where a name-start was expected.
+        found: char,
+    },
+    /// `name…` had no `=` separating it from a value.
+    #[error("expected '=' after attribute {attr}")]
+    ExpectedEquals {
+        /// Attribute name that was missing its `=`.
+        attr: String,
+    },
+    /// `name=` had no opening `"` for the value.
+    #[error("expected '\"' to open value of {attr}")]
+    ExpectedOpenQuote {
+        /// Attribute name whose value opened without a quote.
+        attr: String,
+    },
+    /// `name="…` reached end-of-input before the closing `"`.
+    #[error("unterminated value of {attr}")]
+    UnterminatedValue {
+        /// Attribute name whose value never terminated.
+        attr: String,
+    },
 }

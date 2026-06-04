@@ -107,6 +107,15 @@ impl Markdown {
     /// XML name (see [`crate::is_valid_name`]) or repeats an earlier name.
     /// Both conditions are programmer errors; use [`Self::try_update`] for
     /// runtime-sourced attribute slices that may carry bad input.
+    ///
+    /// ```
+    /// let doc = marxml::parse(r#"<task id="1" status="todo"/>"#)?;
+    /// let sel = marxml::Selector::parse("task")?;
+    /// let out = doc.update(&sel, &[("status", "done"), ("owner", "zac")]);
+    /// assert!(out.contains(r#"status="done""#));
+    /// assert!(out.contains(r#"owner="zac""#));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[must_use]
     pub fn update(&self, sel: &Selector, new_attrs: &[(&str, &str)]) -> String {
         mutate::update(self, sel, new_attrs)
@@ -114,6 +123,16 @@ impl Markdown {
 
     /// Replace the inner content of every element matching `sel` with
     /// `new_body`. Returns the new raw document.
+    ///
+    /// `new_body` is spliced verbatim — use [`Self::replace_text`] when the
+    /// replacement is untrusted prose that should be XML-escaped first.
+    ///
+    /// ```
+    /// let doc = marxml::parse("<note>old</note>")?;
+    /// let sel = marxml::Selector::parse("note")?;
+    /// assert_eq!(doc.replace_content(&sel, "new"), "<note>new</note>");
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[must_use]
     pub fn replace_content(&self, sel: &Selector, new_body: &str) -> String {
         mutate::replace_content(self, sel, new_body)
@@ -124,6 +143,15 @@ impl Markdown {
     ///
     /// `replacement` is written verbatim; `$1` / `$name` / `${name}` are not
     /// interpreted as capture references.
+    ///
+    /// ```
+    /// use regex::Regex;
+    /// let doc = marxml::parse("<note>foo bar foo</note>")?;
+    /// let sel = marxml::Selector::parse("note")?;
+    /// let pat = Regex::new("foo")?;
+    /// assert_eq!(doc.replace_in(&sel, &pat, "BAZ"), "<note>BAZ bar BAZ</note>");
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[must_use]
     pub fn replace_in(&self, sel: &Selector, pattern: &Regex, replacement: &str) -> String {
         mutate::replace_in(self, sel, pattern, replacement)
@@ -132,6 +160,13 @@ impl Markdown {
     /// Like [`Self::replace_content`], but `new_body` is run through
     /// [`crate::escape_text`] before being spliced. Use this for replacement
     /// strings sourced from untrusted text.
+    ///
+    /// ```
+    /// let doc = marxml::parse("<note>old</note>")?;
+    /// let sel = marxml::Selector::parse("note")?;
+    /// assert_eq!(doc.replace_text(&sel, "a < b & c"), "<note>a &lt; b &amp; c</note>");
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[must_use]
     pub fn replace_text(&self, sel: &Selector, new_body: &str) -> String {
         mutate::replace_text(self, sel, new_body)
@@ -166,7 +201,7 @@ impl Markdown {
     /// rewritten output alongside the counts.
     #[must_use]
     pub fn replace_content_report(&self, sel: &Selector, new_body: &str) -> crate::MutationReport {
-        mutate::try_replace_content(self, sel, new_body)
+        mutate::splice_content_report(self, sel, new_body)
     }
 
     /// Like [`Self::replace_in`] but returns a [`crate::MutationReport`].
@@ -179,13 +214,28 @@ impl Markdown {
         pattern: &Regex,
         replacement: &str,
     ) -> crate::MutationReport {
-        mutate::try_replace_in(self, sel, pattern, replacement)
+        mutate::splice_regex_report(self, sel, pattern, replacement)
     }
 
     /// Serialize the parsed XML elements back to a flat XML string.
     ///
     /// Surrounding markdown text is dropped — this is just the structured
     /// payload. Pass [`crate::SerializeOpts::pretty`] for indented multi-line output.
+    ///
+    /// **Not byte-preserving.** Unlike the [mutators](Self::update), `to_xml`
+    /// re-emits each element from the parsed tree (attribute ordering,
+    /// whitespace, and escape form follow the [`SerializeOpts`] options
+    /// rather than the original bytes). [`SourcePosition`](crate::SourcePosition)
+    /// values from the source document do **not** apply to the output —
+    /// reparsing `to_xml`'s output produces a fresh set of byte offsets.
+    ///
+    /// ```
+    /// let doc = marxml::parse("# heading\n\n<task id=\"1\"/>")?;
+    /// let xml = doc.to_xml(&marxml::SerializeOpts::default());
+    /// assert!(xml.contains("<task"));
+    /// assert!(!xml.contains("heading"));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[must_use]
     pub fn to_xml(&self, opts: &crate::SerializeOpts) -> String {
         crate::serialize::to_xml(self, opts)

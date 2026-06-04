@@ -8,10 +8,11 @@
 //! matches both a parent and one of its descendants, the parent splice
 //! encloses the child's range; the outer splice wins and the inner splice is
 //! discarded so the document doesn't end up with mutually-inconsistent edits
-//! at overlapping byte ranges. The fallible variants ([`crate::Markdown::try_update`],
-//! [`try_replace_content`], [`try_replace_in`]) surface the discarded count
-//! in the returned [`MutationReport`] so callers can distinguish "no match"
-//! from "match shadowed by an outer match".
+//! at overlapping byte ranges. The report-returning variants
+//! ([`crate::Markdown::try_update`], [`splice_content_report`],
+//! [`splice_regex_report`]) surface the discarded count in the returned
+//! [`MutationReport`] so callers can distinguish "no match" from "match
+//! shadowed by an outer match".
 //!
 //! ## Raw vs. text semantics
 //!
@@ -101,7 +102,7 @@ pub(crate) fn replace_in(
     pattern: &Regex,
     replacement: &str,
 ) -> String {
-    splice_regex(doc, sel, pattern, replacement).output
+    splice_regex_with(doc, sel, pattern, replacement).output
 }
 
 pub(crate) fn replace_text(doc: &Markdown, sel: &Selector, new_body: &str) -> String {
@@ -139,7 +140,7 @@ pub(crate) fn try_update(
     Ok(apply_splices(raw, splices))
 }
 
-pub(crate) fn try_replace_content(
+pub(crate) fn splice_content_report(
     doc: &Markdown,
     sel: &Selector,
     new_body: &str,
@@ -147,13 +148,13 @@ pub(crate) fn try_replace_content(
     splice_content(doc, sel, new_body)
 }
 
-pub(crate) fn try_replace_in(
+pub(crate) fn splice_regex_report(
     doc: &Markdown,
     sel: &Selector,
     pattern: &Regex,
     replacement: &str,
 ) -> MutationReport {
-    splice_regex(doc, sel, pattern, replacement)
+    splice_regex_with(doc, sel, pattern, replacement)
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────
@@ -172,15 +173,6 @@ fn splice_content<'a>(doc: &'a Markdown, sel: &Selector, new_body: &'a str) -> M
     let mut report = apply_splices(raw, splices);
     report.skipped_self_closing = self_closing_skipped;
     report
-}
-
-fn splice_regex(
-    doc: &Markdown,
-    sel: &Selector,
-    pattern: &Regex,
-    replacement: &str,
-) -> MutationReport {
-    splice_regex_with(doc, sel, pattern, replacement)
 }
 
 fn splice_regex_with(
@@ -261,7 +253,10 @@ fn rewrite_open_tag(el: &ElementRef<'_>, new_attrs: &[(&str, &str)], self_close:
         None
     };
     let mut applied = vec![false; new_attrs.len()];
-    let mut out = String::new();
+    // Pre-size: `<` + tag + per-attr ` k="v"` (5 bytes overhead) + optional `/>`/`>`.
+    let existing_bytes: usize = el.attrs().map(|(k, v)| k.len() + v.len() + 5).sum();
+    let new_bytes: usize = new_attrs.iter().map(|(k, v)| k.len() + v.len() + 5).sum();
+    let mut out = String::with_capacity(2 + el.tag().len() + existing_bytes + new_bytes + 2);
     out.push('<');
     out.push_str(el.tag());
     for (name, existing) in el.attrs() {

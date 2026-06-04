@@ -1,0 +1,9 @@
+[package]
+name = "example-advanced"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+marxml = { path = "../../crates/marxml" }

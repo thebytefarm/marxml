@@ -59,6 +59,11 @@ pub(crate) fn collect_matches<'a>(
     out
 }
 
+// `walk` carries the per-traversal scratch (ancestors stack, raw source,
+// trivia ranges, output vec, dedup set) as explicit args rather than packing
+// them into a context struct so the hot recursive call has no indirection
+// through a borrow of `Self`. The arg count is deliberate; pack only if a
+// criterion run shows the indirection is free.
 #[allow(clippy::too_many_arguments)]
 fn walk<'a>(
     node: &'a ElementData,

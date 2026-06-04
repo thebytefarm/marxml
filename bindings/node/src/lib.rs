@@ -7,13 +7,26 @@
 //!
 //! Design notes:
 //! - The document is parsed once into the `NativeMarkdown` handle. Subsequent
-//!   queries and mutations reuse that handle — no per-call reparse.
-//! - All fallible operations route through the crate's `try_*` variants and
-//!   surface errors as `napi::Error` with `InvalidArg` status. The binding
-//!   does not panic on caller-supplied input.
+//!   queries and mutations reuse that handle — the document is never
+//!   reparsed. Selector strings are still parsed per call (see follow-up
+//!   work — exposing a compiled `Selector` class).
+//! - All fallible crate calls are mapped to `napi::Error` via the `From`
+//!   impls below, so call sites use `?` / `Into::into` rather than ad-hoc
+//!   `.map_err(|e| Error::new(...))` closures.
 //! - `Element` is still a flat `#[napi(object)]` POJO for the `elements`
 //!   getter; materializing the whole tree as opaque handles is a separate
 //!   refactor.
+//!
+//! Clippy allowances below are justified per-lint:
+//! - `needless_pass_by_value`: napi-rs expands `#[napi]` methods into FFI
+//!   signatures that take owned JS bridge values; switching to `&str` is
+//!   not yet supported uniformly in v3 derive output.
+//! - `missing_errors_doc`: error doc comments are intentionally on the
+//!   `marxml::*Error` types in the core crate; the binding is a transparent
+//!   pass-through and duplicating them rots.
+//! - `missing_panics_doc`: napi-derive expansion contains FFI panic edges
+//!   that are unreachable from caller-shaped input. Documenting "may panic
+//!   if napi's FFI layer is broken" is noise.
 
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::missing_errors_doc)]
@@ -25,6 +38,54 @@ use napi::bindgen_prelude::Either;
 use napi::{Error, Result, Status};
 use napi_derive::napi;
 use regex::{Regex, RegexBuilder};
+
+// ─── Error mapping ────────────────────────────────────────────────────────
+
+/// Map any crate-side `Result<T, E: std::error::Error>` into `napi::Result<T>`
+/// with `Status::InvalidArg`. The orphan rule prevents a direct
+/// `From<marxml::*Error> for napi::Error` impl in this crate, so this
+/// extension trait stands in: call sites read `marxml::Selector::parse(s)
+/// .into_napi()?` instead of repeating the `.map_err(|e| Error::new(...))`
+/// closure on every fallible boundary.
+///
+/// Every marxml error variant is caller-input (malformed selector,
+/// duplicate attribute, invalid XML name, regex compile failure), so a
+/// single `InvalidArg` status fits all of them. If a future variant ever
+/// represents a binding-internal failure, swap the call site to an explicit
+/// `Error::new(Status::GenericFailure, ...)` and document why.
+trait IntoNapi<T> {
+    fn into_napi(self) -> Result<T>;
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, marxml::ParseError> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, marxml::SelectorError> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, marxml::MutateError> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, marxml::SchemaError> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
+
+impl<T> IntoNapi<T> for std::result::Result<T, regex::Error> {
+    fn into_napi(self) -> Result<T> {
+        self.map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    }
+}
 
 // ─── Flat shape types crossing the FFI ────────────────────────────────────
 
@@ -233,7 +294,7 @@ impl NativeMarkdown {
         self.inner
             .try_update(&sel, &pairs)
             .map(|report| report.output)
-            .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+            .into_napi()
     }
 
     /// Replace inner content verbatim. `new_body` is spliced as raw bytes —
@@ -256,8 +317,11 @@ impl NativeMarkdown {
     /// Run a regex `replace_all` over the inner content of matching
     /// elements. `pattern` accepts either a plain string or a `RegExpShape`
     /// (i.e. the destructured fields of a JS `RegExp`). JS regex flags
-    /// `i`/`m`/`s`/`x` are honored via Rust's `(?flags:…)` prefix; `g` is a
-    /// no-op (`replace_all` is global by default).
+    /// `i`/`m`/`s`/`x` are honored via `RegexBuilder` setters
+    /// (`case_insensitive`, `multi_line`, `dot_matches_new_line`,
+    /// `ignore_whitespace`); `g`/`u`/`y`/`d` are accepted-and-ignored
+    /// (`replace_all` is already global; `u` is implicit; `y`/`d` have no
+    /// Rust equivalent). Any other flag returns `InvalidArg`.
     ///
     /// `replacement` is verbatim text — `$1` / `$name` are NOT interpreted as
     /// capture references.
@@ -329,13 +393,13 @@ impl NativeMarkdown {
 pub fn parse(source: String) -> Result<NativeMarkdown> {
     marxml::parse(&source)
         .map(|inner| NativeMarkdown { inner })
-        .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+        .into_napi()
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────
 
 fn parse_selector(s: &str) -> Result<marxml::Selector> {
-    marxml::Selector::parse(s).map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    marxml::Selector::parse(s).into_napi()
 }
 
 fn compile_regex(pattern: Either<String, RegExpShape>) -> Result<Regex> {
@@ -368,9 +432,7 @@ fn compile_regex(pattern: Either<String, RegExpShape>) -> Result<Regex> {
             }
         }
     }
-    builder
-        .build()
-        .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    builder.build().into_napi()
 }
 
 fn build_schema(input: HashMap<String, TagSchemaShape>) -> Result<marxml::Schema> {
@@ -409,9 +471,7 @@ fn build_schema(input: HashMap<String, TagSchemaShape>) -> Result<marxml::Schema
             tb
         });
     }
-    builder
-        .try_build()
-        .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))
+    builder.try_build().into_napi()
 }
 
 fn error_kind(e: &marxml::ValidationError) -> &'static str {
