@@ -162,18 +162,26 @@ pub(crate) enum CompiledAttrKind {
 }
 
 /// Reasons [`SchemaBuilder::try_build`] can reject a schema.
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
+///
+/// `Eq` is intentionally not derived because [`SchemaError::InvalidRegex`]
+/// wraps a [`regex::Error`], which is `PartialEq` but not `Eq`. Use
+/// `matches!` or `PartialEq` when comparing variants in tests.
+#[derive(Debug, Clone, Error, PartialEq)]
 #[non_exhaustive]
 pub enum SchemaError {
-    /// An `AttrKind::Regex(...)` pattern failed to compile.
-    #[error("invalid regex for {tag}.{attr}: {reason}")]
+    /// An `AttrKind::Regex(...)` pattern failed to compile. The underlying
+    /// [`regex::Error`] is exposed via [`std::error::Error::source`] so
+    /// downstream renderers (`anyhow`, `eyre`, `tracing`) can walk the
+    /// cause chain.
+    #[error("invalid regex for {tag}.{attr}")]
     InvalidRegex {
         /// Tag carrying the offending attribute.
         tag: String,
         /// Attribute name.
         attr: String,
-        /// Compiler error message.
-        reason: String,
+        /// Underlying compiler error from the `regex` crate.
+        #[source]
+        source: regex::Error,
     },
     /// A tag, attribute, or child name in the schema is not a valid XML name.
     ///
@@ -316,10 +324,10 @@ fn compile_tag(tag: &str, ts: TagSchema) -> Result<CompiledTagSchema, SchemaErro
                 // accept `"undone"` because `is_match` searches anywhere in
                 // the haystack.
                 let anchored = format!("\\A(?:{pat})\\z");
-                let re = Regex::new(&anchored).map_err(|e| SchemaError::InvalidRegex {
+                let re = Regex::new(&anchored).map_err(|source| SchemaError::InvalidRegex {
                     tag: tag.to_string(),
                     attr: name.clone(),
-                    reason: e.to_string(),
+                    source,
                 })?;
                 CompiledAttrKind::Regex(re)
             }

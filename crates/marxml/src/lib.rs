@@ -41,12 +41,12 @@ mod types;
 mod validate;
 
 pub use document::Markdown;
-pub use error::ParseError;
+pub use error::{MalformedAttrKind, MalformedTagKind, ParseError};
 pub use escape::{escape_attr, escape_text, is_valid_name};
 pub use mutate::{MutateError, MutationReport};
 pub use parse::{parse, parse_fragment, parse_owned, MAX_DEPTH, MAX_INPUT_BYTES};
 pub use schema::{AttrConstraint, AttrKind, Schema, SchemaBuilder, SchemaError, TagBuilder};
-pub use selector::{Selector, SelectorError};
+pub use selector::{Selector, SelectorError, SyntaxKind};
 pub use serialize::SerializeOpts;
 pub use types::{ElementRef, SourcePosition, SourceSpan};
 pub use validate::{validate, ValidationError, ValidationReport};

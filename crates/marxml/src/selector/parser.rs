@@ -17,7 +17,7 @@
 //! ```
 
 use super::ast::{Combinator, CompiledSelector, Compound, Predicate, Simple};
-use super::error::SelectorError;
+use super::error::{SelectorError, SyntaxKind};
 use crate::escape::decode_entities;
 
 pub(super) fn parse(input: &str) -> Result<CompiledSelector, SelectorError> {
@@ -42,7 +42,7 @@ pub(super) fn parse(input: &str) -> Result<CompiledSelector, SelectorError> {
         compounds.push(p.parse_compound()?);
         if compounds.len() > MAX_UNION_LEN {
             return Err(SelectorError::Syntax {
-                reason: format!("selector union exceeds maximum size of {MAX_UNION_LEN}"),
+                kind: SyntaxKind::UnionTooLarge { max: MAX_UNION_LEN },
                 at: p.pos,
             });
         }
@@ -110,13 +110,15 @@ impl<'a> Parser<'a> {
             } else if had_ws {
                 Combinator::Descendant
             } else {
-                return Err(self.syntax_error("expected combinator or ','"));
+                return Err(self.syntax_error("combinator or ','"));
             };
             simples.push(self.parse_simple()?);
             links.push(combinator);
             if simples.len() > MAX_COMPOUND_LEN {
                 return Err(SelectorError::Syntax {
-                    reason: format!("compound chain exceeds maximum length of {MAX_COMPOUND_LEN}"),
+                    kind: SyntaxKind::CompoundTooLong {
+                        max: MAX_COMPOUND_LEN,
+                    },
                     at: self.pos,
                 });
             }
@@ -152,15 +154,15 @@ impl<'a> Parser<'a> {
             }
             if predicates.len() > MAX_PREDICATES_PER_SIMPLE {
                 return Err(SelectorError::Syntax {
-                    reason: format!(
-                        "simple selector carries more than {MAX_PREDICATES_PER_SIMPLE} predicates"
-                    ),
+                    kind: SyntaxKind::TooManyPredicates {
+                        max: MAX_PREDICATES_PER_SIMPLE,
+                    },
                     at: self.pos,
                 });
             }
         }
         if !had_marker && predicates.is_empty() {
-            return Err(self.syntax_error("expected tag name, '*', or predicate"));
+            return Err(self.syntax_error("tag name, '*', or predicate"));
         }
         Ok(Simple { tag, predicates })
     }
@@ -168,7 +170,7 @@ impl<'a> Parser<'a> {
     fn parse_attribute_predicate(&mut self) -> Result<Predicate, SelectorError> {
         self.advance(1); // '['
         if !self.peek().is_some_and(is_name_start) {
-            return Err(self.syntax_error("expected attribute name after '['"));
+            return Err(self.syntax_error("attribute name after '['"));
         }
         let name = self.read_name();
         match self.peek() {
@@ -185,7 +187,7 @@ impl<'a> Parser<'a> {
             Some(b'^') => self.parse_two_char_op(name, b'=', Predicate::AttrStartsWith),
             Some(b'$') => self.parse_two_char_op(name, b'=', Predicate::AttrEndsWith),
             Some(b'*') => self.parse_two_char_op(name, b'=', Predicate::AttrContains),
-            _ => Err(self.syntax_error("expected attribute operator or ']'")),
+            _ => Err(self.syntax_error("attribute operator or ']'")),
         }
     }
 
@@ -205,7 +207,7 @@ impl<'a> Parser<'a> {
     fn parse_pseudo(&mut self) -> Result<Predicate, SelectorError> {
         self.advance(1); // ':'
         if !self.peek().is_some_and(is_name_start) {
-            return Err(self.syntax_error("expected pseudo-class name after ':'"));
+            return Err(self.syntax_error("pseudo-class name after ':'"));
         }
         let name = self.read_pseudo_name();
         match name.as_str() {
@@ -214,9 +216,10 @@ impl<'a> Parser<'a> {
                 self.expect(b'(', "'(' after :nth-child")?;
                 let n = self.read_unsigned_int()?;
                 if n == 0 {
-                    return Err(self.syntax_error(
-                        ":nth-child argument must be 1 or greater (siblings are 1-indexed)",
-                    ));
+                    return Err(SelectorError::Syntax {
+                        kind: SyntaxKind::NthChildMustBeOneOrGreater,
+                        at: self.pos,
+                    });
                 }
                 self.expect(b')', "')' after nth-child argument")?;
                 Ok(Predicate::NthChild(n))
@@ -225,7 +228,7 @@ impl<'a> Parser<'a> {
                 self.expect(b'(', "'(' after :not")?;
                 if self.not_depth >= MAX_NOT_DEPTH {
                     return Err(SelectorError::Syntax {
-                        reason: format!(":not nesting exceeds maximum of {MAX_NOT_DEPTH}"),
+                        kind: SyntaxKind::NotNestingTooDeep { max: MAX_NOT_DEPTH },
                         at: self.pos,
                     });
                 }
@@ -239,7 +242,9 @@ impl<'a> Parser<'a> {
                 Ok(Predicate::Not(Box::new(inner)))
             }
             other => Err(SelectorError::Syntax {
-                reason: format!("unsupported pseudo-class :{other}"),
+                kind: SyntaxKind::UnsupportedPseudoClass {
+                    name: other.to_string(),
+                },
                 at: self.pos,
             }),
         }
@@ -289,33 +294,42 @@ impl<'a> Parser<'a> {
         let start = self.pos;
         while self.peek().is_some_and(|b| b.is_ascii_digit()) {
             if self.pos - start >= MAX_DIGITS {
-                return Err(self.syntax_error("integer out of range"));
+                return Err(SelectorError::Syntax {
+                    kind: SyntaxKind::IntegerOutOfRange,
+                    at: self.pos,
+                });
             }
             self.pos += 1;
         }
         if start == self.pos {
-            return Err(self.syntax_error("expected digit"));
+            return Err(SelectorError::Syntax {
+                kind: SyntaxKind::ExpectedDigit,
+                at: self.pos,
+            });
         }
         self.src[start..self.pos]
             .parse::<u32>()
-            .map_err(|_| self.syntax_error("integer out of range"))
+            .map_err(|_| SelectorError::Syntax {
+                kind: SyntaxKind::IntegerOutOfRange,
+                at: self.pos,
+            })
     }
 
-    fn expect(&mut self, byte: u8, label: &str) -> Result<(), SelectorError> {
+    fn expect(&mut self, byte: u8, label: &'static str) -> Result<(), SelectorError> {
         if self.peek() == Some(byte) {
             self.pos += 1;
             Ok(())
         } else {
             Err(SelectorError::Syntax {
-                reason: format!("expected {label}"),
+                kind: SyntaxKind::Expected { what: label },
                 at: self.pos,
             })
         }
     }
 
-    fn syntax_error(&self, reason: &str) -> SelectorError {
+    fn syntax_error(&self, what: &'static str) -> SelectorError {
         SelectorError::Syntax {
-            reason: reason.to_string(),
+            kind: SyntaxKind::Expected { what },
             at: self.pos,
         }
     }
