@@ -17,11 +17,13 @@ cargo run -p example-advanced
 
 ## Reset
 
+From this directory:
+
 ```sh
-../reset.sh         # clears out/ in every example
+pnpm dlx rimraf out
 ```
 
-The input fixture is never written to — only `out/plan.xml` is produced.
+The input fixture is never written to — only `out/plan.xml` is produced — so deleting `out/` is the entire reset.
 
 ## API surface exercised
 
