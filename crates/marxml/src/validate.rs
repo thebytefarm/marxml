@@ -138,6 +138,18 @@ const ATTR_MAP_THRESHOLD: usize = 16;
 ///
 /// Tags not present in the schema are not inspected. Validation continues
 /// after the first error so callers see every issue at once.
+///
+/// ```
+/// use marxml::{parse, schema::AttrKind, validate, Schema};
+///
+/// let schema = Schema::builder()
+///     .tag("task", |t| t.attr("id", AttrKind::String.required()))
+///     .build();
+/// let doc = parse("<task/>")?;
+/// let report = validate(&doc, &schema);
+/// assert!(!report.errors().is_empty()); // missing required `id`
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[must_use]
 pub fn validate(doc: &Markdown, schema: &Schema) -> ValidationReport {
     let mut errors = Vec::new();

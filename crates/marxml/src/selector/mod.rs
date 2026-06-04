@@ -41,6 +41,15 @@ impl Selector {
     ///
     /// Returns [`SelectorError`] if the string is empty, ends unexpectedly,
     /// or contains a syntax error.
+    ///
+    /// ```
+    /// use marxml::{parse, Selector};
+    ///
+    /// let doc = parse(r#"<task id="a"/><task id="b"/><note/>"#)?;
+    /// let sel = Selector::parse("task, note")?;
+    /// assert_eq!(doc.select(&sel).count(), 3);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn parse(input: &str) -> Result<Self, SelectorError> {
         Ok(Self {
             compiled: parser::parse(input)?,

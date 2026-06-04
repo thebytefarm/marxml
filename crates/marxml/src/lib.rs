@@ -15,9 +15,15 @@
 //!   [`SerializeOpts`] — render the parsed tree back out.
 //!
 //! ```
-//! let doc = marxml::parse("<task id=\"1\">hello</task>")?;
+//! use marxml::{parse, Selector};
+//!
+//! let doc = parse(r#"<task id="1" status="todo">write tests</task>"#)?;
 //! assert_eq!(doc.root_count(), 1);
-//! # Ok::<(), marxml::ParseError>(())
+//!
+//! let sel = Selector::parse(r#"task[status="todo"]"#)?;
+//! let updated = doc.update(&sel, &[("status", "done")]);
+//! assert!(updated.contains(r#"status="done""#));
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
 #![doc(html_root_url = "https://docs.rs/marxml/0.0.0")]

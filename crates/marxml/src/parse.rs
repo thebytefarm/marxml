@@ -44,6 +44,13 @@ pub const MAX_INPUT_BYTES: usize = u32::MAX as usize - 1;
 /// tags, duplicate sibling `id` attributes within the same parent and tag
 /// name, nesting deeper than [`MAX_DEPTH`], or inputs larger than
 /// [`MAX_INPUT_BYTES`].
+///
+/// ```
+/// let doc = marxml::parse("# heading\n\n<task id=\"1\">do thing</task>")?;
+/// assert_eq!(doc.root_count(), 1);
+/// assert!(doc.raw().contains("# heading"));
+/// # Ok::<(), marxml::ParseError>(())
+/// ```
 pub fn parse(input: &str) -> Result<Markdown, ParseError> {
     parse_owned(input.to_string())
 }
@@ -68,6 +75,13 @@ pub fn parse_fragment(input: &str) -> Result<Markdown, ParseError> {
 /// # Errors
 ///
 /// See [`parse`].
+///
+/// ```
+/// let src = String::from(r#"<task id="1"/>"#);
+/// let doc = marxml::parse_owned(src)?;
+/// assert_eq!(doc.root_count(), 1);
+/// # Ok::<(), marxml::ParseError>(())
+/// ```
 pub fn parse_owned(input: String) -> Result<Markdown, ParseError> {
     if input.len() > MAX_INPUT_BYTES {
         return Err(ParseError::InputTooLarge {
@@ -246,4 +260,114 @@ fn check_duplicate_id(
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn attrs(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn check_duplicate_id_noop_without_id_attribute() {
+        let mut scope: Option<IdScope> = None;
+        let a = attrs(&[("class", "x")]);
+        assert!(check_duplicate_id("task", &a, 1, &mut scope).is_ok());
+        // Should remain unallocated — the scope is lazy.
+        assert!(scope.is_none());
+    }
+
+    #[test]
+    fn check_duplicate_id_allocates_scope_on_first_id() {
+        let mut scope: Option<IdScope> = None;
+        let a = attrs(&[("id", "t1")]);
+        assert!(check_duplicate_id("task", &a, 1, &mut scope).is_ok());
+        assert!(scope.is_some());
+    }
+
+    #[test]
+    fn check_duplicate_id_flags_repeat_within_same_tag() {
+        let mut scope: Option<IdScope> = None;
+        let a = attrs(&[("id", "t1")]);
+        check_duplicate_id("task", &a, 1, &mut scope).unwrap();
+        let err = check_duplicate_id("task", &a, 2, &mut scope).unwrap_err();
+        assert!(
+            matches!(err, ParseError::DuplicateId { ref tag, ref id, line: 2 } if tag == "task" && id == "t1")
+        );
+    }
+
+    #[test]
+    fn check_duplicate_id_scoped_by_tag_name() {
+        // Same id literal on two different tag names at the same scope is
+        // fine — the scope key is (tag, id), not just id.
+        let mut scope: Option<IdScope> = None;
+        let a = attrs(&[("id", "x")]);
+        check_duplicate_id("task", &a, 1, &mut scope).unwrap();
+        assert!(check_duplicate_id("note", &a, 2, &mut scope).is_ok());
+    }
+
+    #[test]
+    fn current_scope_routes_to_top_frame_then_root() {
+        let mut stack: Vec<Frame> = Vec::new();
+        let mut root_seen: Option<IdScope> = None;
+
+        // Empty stack → root_seen.
+        let scope = current_scope(&mut stack, &mut root_seen);
+        assert!(scope.is_none());
+        *scope = Some(HashMap::new());
+        assert!(root_seen.is_some());
+
+        // Non-empty stack → top frame's seen_ids, root_seen untouched.
+        stack.push(Frame {
+            name: "a".to_string(),
+            attrs: Vec::new(),
+            body_start: 0,
+            span_start: SourcePosition { line: 1, offset: 0 },
+            children: Vec::new(),
+            seen_ids: None,
+        });
+        let scope = current_scope(&mut stack, &mut root_seen);
+        assert!(scope.is_none()); // top frame starts fresh
+        *scope = Some(HashMap::new());
+        assert!(stack[0].seen_ids.is_some());
+    }
+
+    #[test]
+    fn push_element_routes_to_top_or_roots() {
+        let mut stack: Vec<Frame> = Vec::new();
+        let mut roots: Vec<ElementData> = Vec::new();
+        let elem = ElementData {
+            tag: "a".into(),
+            attrs: Vec::new(),
+            content_range: 0..0,
+            children: Vec::new(),
+            span: SourceSpan {
+                start: SourcePosition { line: 1, offset: 0 },
+                end: SourcePosition { line: 1, offset: 4 },
+            },
+            self_closing: true,
+        };
+
+        // Empty stack → element becomes a root.
+        push_element(elem.clone(), &mut stack, &mut roots);
+        assert_eq!(roots.len(), 1);
+
+        // Non-empty stack → element appended to top frame's children.
+        stack.push(Frame {
+            name: "outer".into(),
+            attrs: Vec::new(),
+            body_start: 0,
+            span_start: SourcePosition { line: 1, offset: 0 },
+            children: Vec::new(),
+            seen_ids: None,
+        });
+        push_element(elem, &mut stack, &mut roots);
+        assert_eq!(roots.len(), 1, "root count unchanged");
+        assert_eq!(stack[0].children.len(), 1);
+    }
 }

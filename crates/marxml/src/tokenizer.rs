@@ -543,3 +543,118 @@ fn skip_ws(bytes: &[u8], i: &mut usize, line: &mut u32) {
         *i += 1;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn looks_like_tag_start_accepts_name_and_slash_name() {
+        assert!(looks_like_tag_start(b"a>", 0));
+        assert!(looks_like_tag_start(b"_x>", 0));
+        assert!(looks_like_tag_start(b"/a>", 0));
+    }
+
+    #[test]
+    fn looks_like_tag_start_rejects_prose_lt() {
+        // The cases that let `if x < 3` and `a <  b` survive parsing as
+        // literal text instead of erroring out.
+        assert!(!looks_like_tag_start(b" 3", 0));
+        assert!(!looks_like_tag_start(b"3", 0));
+        assert!(!looks_like_tag_start(b"/", 0)); // `</` with nothing after
+        assert!(!looks_like_tag_start(b"/ ", 0)); // `</ ` — slash then non-name
+        assert!(!looks_like_tag_start(b"", 0)); // EOF after `<`
+    }
+
+    #[test]
+    fn skip_ws_counts_newlines() {
+        let bytes = b" \t\n\n  x";
+        let mut i = 0;
+        let mut line = 1;
+        skip_ws(bytes, &mut i, &mut line);
+        assert_eq!(i, 6);
+        assert_eq!(line, 3);
+    }
+
+    #[test]
+    fn scan_to_terminator_advances_line_through_newlines() {
+        let bytes = b"abc\ndef\n-->tail";
+        let hit = scan_to_terminator(bytes, 0, 1, b"-->");
+        // Index past `-->`, line counter advanced by two newlines.
+        assert_eq!(hit, Some((11, 3)));
+    }
+
+    #[test]
+    fn scan_to_terminator_returns_none_on_eof() {
+        let bytes = b"abc no end";
+        assert!(scan_to_terminator(bytes, 0, 1, b"-->").is_none());
+    }
+
+    #[test]
+    fn try_skip_comment_returns_none_for_non_comment() {
+        let bytes = b"<task/>";
+        assert!(matches!(try_skip_comment(bytes, 0, 1), Ok(None)));
+    }
+
+    #[test]
+    fn try_skip_comment_consumes_to_terminator() {
+        let bytes = b"<!-- hi -->after";
+        let (end, line) = try_skip_comment(bytes, 0, 1).unwrap().unwrap();
+        assert_eq!(end, 11);
+        assert_eq!(line, 1);
+    }
+
+    #[test]
+    fn try_skip_comment_errors_on_unterminated() {
+        let bytes = b"<!-- forever";
+        let err = try_skip_comment(bytes, 0, 1).unwrap_err();
+        assert!(matches!(err, ParseError::MalformedTag { .. }));
+    }
+
+    #[test]
+    fn cdata_trivia_split_into_open_and_close_brackets() {
+        // The mutators rely on CDATA *content* falling through as text while
+        // only the `<![CDATA[` / `]]>` brackets register as trivia.
+        let input = "<![CDATA[hello]]>";
+        let stream = tokenize(input).unwrap();
+        assert!(stream.tokens.is_empty());
+        assert_eq!(stream.trivia.len(), 2);
+        assert_eq!(stream.trivia[0], 0..9); // `<![CDATA[`
+        assert_eq!(stream.trivia[1], 14..17); // `]]>`
+    }
+
+    #[test]
+    fn record_seen_attr_lazy_promotes_at_threshold() {
+        // Below threshold the set stays None so the linear-scan path is used.
+        let mut attrs: Vec<(String, String)> = Vec::new();
+        let mut seen: Option<HashSet<String>> = None;
+        for n in 0..ATTR_DUP_SET_THRESHOLD - 1 {
+            let key = format!("a{n}");
+            record_seen_attr(&attrs, &key, &mut seen);
+            attrs.push((key, String::new()));
+        }
+        assert!(seen.is_none(), "set should not promote before threshold");
+
+        // The insertion that pushes attrs.len() + 1 to the threshold triggers
+        // promotion and back-fills every prior key so duplicate lookups stay
+        // correct after the switch.
+        let final_key = format!("a{}", ATTR_DUP_SET_THRESHOLD - 1);
+        record_seen_attr(&attrs, &final_key, &mut seen);
+        let set = seen.as_ref().expect("set must be promoted at threshold");
+        assert_eq!(set.len(), ATTR_DUP_SET_THRESHOLD);
+        assert!(set.contains(&final_key));
+        assert!(set.contains("a0"));
+    }
+
+    #[test]
+    fn seen_attribute_uses_set_when_promoted() {
+        let attrs: Vec<(String, String)> = vec![("a".into(), "1".into())];
+        let mut set = HashSet::new();
+        set.insert("a".to_string());
+        assert!(seen_attribute(&attrs, Some(&set), "a"));
+        assert!(!seen_attribute(&attrs, Some(&set), "b"));
+        // And without a set, falls back to scanning attrs.
+        assert!(seen_attribute(&attrs, None, "a"));
+        assert!(!seen_attribute(&attrs, None, "b"));
+    }
+}
