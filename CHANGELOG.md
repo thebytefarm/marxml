@@ -34,6 +34,12 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 [Unreleased]: https://github.com/thebytefarm/marxml/compare/v0.0.0...HEAD
 [0.0.0]: https://github.com/thebytefarm/marxml/releases/tag/v0.0.0
+## 0.1.4 (2026-05-19)
+
+### Fixes
+
+- build napi loader as ESM + add publish-time smoke test
+
 ## 0.1.3 (2026-05-19)
 
 ### Fixes
