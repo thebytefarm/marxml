@@ -36,7 +36,7 @@ fn fully_compliant_doc_validates() {
     let doc = parse(src).unwrap();
     let report = validate(&doc, &task_schema());
     assert!(report.is_valid(), "got {:?}", report.errors());
-    assert!(report.errors().is_empty());
+    assert_eq!(report.errors(), []);
 }
 
 #[test]

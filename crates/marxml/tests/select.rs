@@ -292,7 +292,7 @@ fn nth_child_zero_is_a_parse_error() {
 fn selector_displays_as_debug() {
     // Ensures Selector implements Debug for diagnostics.
     let sel = Selector::parse("a > b").unwrap();
-    assert!(!format!("{sel:?}").is_empty());
+    assert_ne!(format!("{sel:?}"), "");
 }
 
 #[test]
