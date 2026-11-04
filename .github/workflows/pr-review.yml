@@ -1,0 +1,37 @@
+# Shared review engine: thebytefarm/.github (review/README.md).
+name: Pull review
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: Open pull request number
+        required: true
+        type: number
+      publish:
+        description: Publish one review and status rather than only an artifact
+        default: false
+        type: boolean
+      auto-merge:
+        description: Merge approved low-risk non-release PRs after CI passes (requires publish)
+        default: false
+        type: boolean
+
+permissions: {}
+
+jobs:
+  review:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+      id-token: write
+      statuses: write
+    uses: thebytefarm/.github/.github/workflows/pull-review.yml@main
+    with:
+      pr-number: ${{ fromJSON(github.event.inputs.pr-number) }}
+      publish: ${{ inputs.publish }}
+      auto-merge: ${{ inputs.auto-merge }}
+    secrets:
+      CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
